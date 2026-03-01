@@ -246,8 +246,8 @@ async function fetchHealth(settings, timeoutMs = 2500) {
   }
 }
 
-function scheduleNextPoll(seconds = 2) {
-  const delayMs = Math.max(seconds * 1000, 2000);
+function scheduleNextPoll(seconds = 0.8) {
+  const delayMs = Math.max(seconds * 1000, 500);
   chrome.alarms.create("queuePollOnce", { when: Date.now() + delayMs });
 }
 
@@ -397,7 +397,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type === "FORCE_POLL") {
     (async () => {
       await pollOnce({ forceHealth: true });
-      scheduleNextPoll(2);
+      scheduleNextPoll(0.8);
       const status = await getStatusPayload({ forceHealth: true });
       sendResponse({ ok: true, status });
     })().catch((error) => {
@@ -412,7 +412,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       await saveSettings({ enabled });
       if (enabled) {
         runtimeState.lastError = "";
-        scheduleNextPoll(1);
+        scheduleNextPoll(0.5);
       } else {
         runtimeState.lastJobStatus = "disabled";
       }
@@ -431,17 +431,17 @@ chrome.runtime.onInstalled.addListener(async () => {
   const current = await chrome.storage.local.get(defaults);
   await chrome.storage.local.set({ ...defaults, ...current });
   chrome.alarms.create("queuePoll", { periodInMinutes: 1 });
-  scheduleNextPoll(2);
+  scheduleNextPoll(0.8);
 });
 
 chrome.runtime.onStartup.addListener(() => {
   chrome.alarms.create("queuePoll", { periodInMinutes: 1 });
-  scheduleNextPoll(2);
+  scheduleNextPoll(0.8);
 });
 
 chrome.alarms.onAlarm.addListener(async (alarm) => {
   if (alarm.name === "queuePoll" || alarm.name === "queuePollOnce") {
     await pollOnce();
-    scheduleNextPoll(2);
+    scheduleNextPoll(0.8);
   }
 });

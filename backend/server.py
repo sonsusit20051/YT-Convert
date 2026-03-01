@@ -18,11 +18,12 @@ WORKER_STALE_SEC = int(os.getenv("WORKER_STALE_SEC", "60"))
 MAX_BODY_BYTES = 1024 * 1024
 ALLOWED_ORIGIN_QUERY_KEYS = ("gads_t_sig", "extraParams")
 SYNC_WAIT_TIMEOUT_SEC = int(os.getenv("SYNC_WAIT_TIMEOUT_SEC", "90"))
-SYNC_WAIT_POLL_MS = int(os.getenv("SYNC_WAIT_POLL_MS", "600"))
+SYNC_WAIT_POLL_MS = int(os.getenv("SYNC_WAIT_POLL_MS", "220"))
 SHORT_CODE_LEN = int(os.getenv("SHORT_CODE_LEN", "4"))
 SHORT_TTL_SEC = int(os.getenv("SHORT_TTL_SEC", "604800"))
 SHORT_PUBLIC_BASE = os.getenv("SHORT_PUBLIC_BASE", "").strip()
 SUB_ID_YT = os.getenv("SUB_ID_YT", "YT3")
+FORCED_AFFILIATE_ID = os.getenv("FORCED_AFFILIATE_ID", "17391540096").strip()
 
 URL_CANDIDATE_REGEX = re.compile(
     r"((?:https?://)?(?:[a-z0-9-]+\.)*(?:shopee\.[a-z.]{2,}|shope\.ee|shp\.ee)(?:/[^\s<>\"']*)?)",
@@ -134,6 +135,9 @@ def rebuild_affiliate_link(original_affiliate_link: str, canonical_landing_url: 
         elif k == "sub_id":
             sub_id = v
 
+    if FORCED_AFFILIATE_ID:
+        affiliate_id = FORCED_AFFILIATE_ID
+
     if not affiliate_id:
         return None
 
@@ -146,29 +150,47 @@ def rebuild_affiliate_link(original_affiliate_link: str, canonical_landing_url: 
     return urlunparse(rebuilt)
 
 
-def override_sub_id_in_affiliate_link(original_affiliate_link: str, next_sub_id: str):
+def override_affiliate_meta_in_affiliate_link(
+    original_affiliate_link: str, next_affiliate_id: str = "", next_sub_id=None
+):
     parsed = urlparse(str(original_affiliate_link or ""))
     if not parsed.scheme or not parsed.netloc:
         return original_affiliate_link
 
     affiliate_id = ""
+    sub_id = ""
     origin_link = ""
     for k, v in parse_qsl(parsed.query, keep_blank_values=True):
         if k == "affiliate_id" and v:
             affiliate_id = v
+        elif k == "sub_id":
+            sub_id = v
         elif k == "origin_link" and v:
             origin_link = v
 
-    if not affiliate_id or not origin_link:
+    if not origin_link:
         return original_affiliate_link
 
-    next_query = [("affiliate_id", affiliate_id)]
-    if str(next_sub_id or "").strip():
-        next_query.append(("sub_id", str(next_sub_id).strip()))
+    final_affiliate_id = str(next_affiliate_id or affiliate_id or "").strip()
+    if not final_affiliate_id:
+        return original_affiliate_link
+
+    if next_sub_id is None:
+        final_sub_id = str(sub_id or "").strip()
+    else:
+        final_sub_id = str(next_sub_id or "").strip()
+
+    next_query = [("affiliate_id", final_affiliate_id)]
+    if final_sub_id:
+        next_query.append(("sub_id", final_sub_id))
     next_query.append(("origin_link", origin_link))
 
     rebuilt = parsed._replace(query=urlencode(next_query, doseq=True), fragment="")
     return urlunparse(rebuilt)
+
+
+def override_sub_id_in_affiliate_link(original_affiliate_link: str, next_sub_id: str):
+    return override_affiliate_meta_in_affiliate_link(original_affiliate_link, "", next_sub_id)
 
 
 def normalize_input(raw_input: str):
@@ -483,10 +505,13 @@ def submit_job_result(body: dict):
             raw_clean_url = str(body.get("cleanLandingUrl") or "").strip()
             canonical_clean = canonicalize_landing_url(raw_clean_url or raw_landing_url)
             canonical_affiliate = rebuild_affiliate_link(affiliate_link, canonical_clean) if canonical_clean else None
+            final_affiliate_link = override_affiliate_meta_in_affiliate_link(
+                canonical_affiliate or affiliate_link, FORCED_AFFILIATE_ID
+            )
 
             job["status"] = "success"
             job["message"] = "Tạo link thành công."
-            job["affiliateLink"] = canonical_affiliate or affiliate_link
+            job["affiliateLink"] = final_affiliate_link
             job["landingUrl"] = raw_landing_url
             job["cleanLandingUrl"] = canonical_clean or raw_clean_url
             job["updatedAt"] = ts
@@ -573,8 +598,11 @@ class Handler(BaseHTTPRequestHandler):
 
             final_job = done["job"]
             long_affiliate = str(final_job.get("affiliateLink") or "")
-            if mode == "yt":
-                long_affiliate = override_sub_id_in_affiliate_link(long_affiliate, SUB_ID_YT)
+            long_affiliate = override_affiliate_meta_in_affiliate_link(
+                long_affiliate,
+                FORCED_AFFILIATE_ID,
+                SUB_ID_YT if mode == "yt" else None,
+            )
             affiliate_id, sub_id = parse_affiliate_meta(long_affiliate)
             effective_sub_id = sub_id or (SUB_ID_YT if mode == "yt" else "")
             short_link, code = make_short_link(self, long_affiliate)
@@ -693,7 +721,7 @@ class Handler(BaseHTTPRequestHandler):
                     "ok": True,
                     "workerId": worker_id,
                     "job": job,
-                    "waitMs": 1500,
+                    "waitMs": 350,
                 },
             )
             return
