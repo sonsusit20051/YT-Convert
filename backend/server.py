@@ -953,7 +953,7 @@ class Handler(BaseHTTPRequestHandler):
                     "ok": True,
                     "workerId": worker_id,
                     "job": job,
-                    "waitMs": 350,
+                    "waitMs": 180,
                 },
             )
             return

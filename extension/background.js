@@ -2,6 +2,9 @@ const ALLOWED_QUERY_KEYS = new Set(["gads_t_sig"]);
 const AFFILIATE_TAB_URL = "https://affiliate.shopee.vn/*";
 const YT_MAPPING_API = "https://yt.shpee.cc/";
 const TAB_RPC_TIMEOUT_MS = 15000;
+const POLL_FAST_SEC = 0.18;
+const POLL_NORMAL_SEC = 0.35;
+const POLL_SLOW_SEC = 0.8;
 
 const defaults = {
   enabled: true,
@@ -26,6 +29,7 @@ const runtimeState = {
   queueSize: null,
   workersOnline: null,
   workersTotal: null,
+  nextPollSec: POLL_NORMAL_SEC,
 };
 
 async function getSettings() {
@@ -456,8 +460,8 @@ async function fetchHealth(settings, timeoutMs = 2500) {
   }
 }
 
-function scheduleNextPoll(seconds = 0.8) {
-  const delayMs = Math.max(seconds * 1000, 500);
+function scheduleNextPoll(seconds = POLL_NORMAL_SEC) {
+  const delayMs = Math.max(seconds * 1000, 180);
   chrome.alarms.create("queuePollOnce", { when: Date.now() + delayMs });
 }
 
@@ -484,6 +488,7 @@ async function pollOnce({ forceHealth = false } = {}) {
     if (!settings.enabled) {
       runtimeState.lastJobStatus = "disabled";
       runtimeState.lastError = "";
+      runtimeState.nextPollSec = POLL_SLOW_SEC;
       if (forceHealth || Date.now() - runtimeState.lastHealthAt > 8000) {
         try {
           await fetchHealth(settings);
@@ -523,6 +528,7 @@ async function pollOnce({ forceHealth = false } = {}) {
 
     if (!polled.job) {
       runtimeState.lastJobStatus = "idle";
+      runtimeState.nextPollSec = POLL_NORMAL_SEC;
       return;
     }
 
@@ -544,6 +550,7 @@ async function pollOnce({ forceHealth = false } = {}) {
       runtimeState.lastJobStatus = "success";
       runtimeState.lastSuccessAt = Date.now();
       runtimeState.lastError = "";
+      runtimeState.nextPollSec = POLL_FAST_SEC;
     } catch (err) {
       await postWorker(
         "/worker/submit",
@@ -557,10 +564,12 @@ async function pollOnce({ forceHealth = false } = {}) {
       );
       runtimeState.lastJobStatus = "error";
       runtimeState.lastError = err?.message || "Extension convert failed.";
+      runtimeState.nextPollSec = POLL_NORMAL_SEC;
     }
   } catch (error) {
     runtimeState.serverOnline = false;
     runtimeState.lastError = error?.message || "Worker poll failed.";
+    runtimeState.nextPollSec = POLL_SLOW_SEC;
   } finally {
     runtimeState.polling = false;
   }
@@ -616,7 +625,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type === "FORCE_POLL") {
     (async () => {
       await pollOnce({ forceHealth: true });
-      scheduleNextPoll(0.8);
+      scheduleNextPoll(POLL_FAST_SEC);
       const status = await getStatusPayload({ forceHealth: true });
       sendResponse({ ok: true, status });
     })().catch((error) => {
@@ -631,9 +640,11 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       await saveSettings({ enabled });
       if (enabled) {
         runtimeState.lastError = "";
-        scheduleNextPoll(0.5);
+        runtimeState.nextPollSec = POLL_FAST_SEC;
+        scheduleNextPoll(POLL_FAST_SEC);
       } else {
         runtimeState.lastJobStatus = "disabled";
+        runtimeState.nextPollSec = POLL_SLOW_SEC;
       }
       const status = await getStatusPayload({ forceHealth: true });
       sendResponse({ ok: true, status });
@@ -650,17 +661,17 @@ chrome.runtime.onInstalled.addListener(async () => {
   const current = await chrome.storage.local.get(defaults);
   await chrome.storage.local.set({ ...defaults, ...current });
   chrome.alarms.create("queuePoll", { periodInMinutes: 1 });
-  scheduleNextPoll(0.8);
+  scheduleNextPoll(POLL_FAST_SEC);
 });
 
 chrome.runtime.onStartup.addListener(() => {
   chrome.alarms.create("queuePoll", { periodInMinutes: 1 });
-  scheduleNextPoll(0.8);
+  scheduleNextPoll(POLL_FAST_SEC);
 });
 
 chrome.alarms.onAlarm.addListener(async (alarm) => {
   if (alarm.name === "queuePoll" || alarm.name === "queuePollOnce") {
     await pollOnce();
-    scheduleNextPoll(0.8);
+    scheduleNextPoll(runtimeState.nextPollSec || POLL_NORMAL_SEC);
   }
 });

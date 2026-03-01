@@ -19,7 +19,7 @@ AFFILIATE_ID = os.getenv("AFFILIATE_ID", "17391540096")
 SUB_ID = os.getenv("SUB_ID", "YT3")
 BASE_REDIRECT = os.getenv("BASE_REDIRECT", "https://s.shopee.vn/an_redir")
 RESOLVE_TIMEOUT_SEC = float(os.getenv("RESOLVE_TIMEOUT_SEC", "10"))
-DEFAULT_WAIT_SEC = float(os.getenv("DEFAULT_WAIT_SEC", "0.35"))
+DEFAULT_WAIT_SEC = float(os.getenv("DEFAULT_WAIT_SEC", "0.20"))
 ALLOW_INSECURE_TLS_RETRY = os.getenv("ALLOW_INSECURE_TLS_RETRY", "1") == "1"
 
 def is_shortlink_host(hostname: str) -> bool:
@@ -171,7 +171,7 @@ def main():
             job = polled.get("job")
             if not job:
                 wait_ms = float(polled.get("waitMs") or int(DEFAULT_WAIT_SEC * 1000))
-                time.sleep(max(wait_ms / 1000.0, 0.3))
+                time.sleep(max(wait_ms / 1000.0, 0.18))
                 continue
 
             job_id = str(job.get("id") or "")
