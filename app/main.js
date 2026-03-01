@@ -1,5 +1,5 @@
 import { convertViaSyncApi, hasBackendEndpoint } from "./api.js";
-import { copyText, readClipboardText } from "./clipboard.js";
+import { readClipboardText } from "./clipboard.js";
 import { dom } from "./dom.js";
 import {
   clearInputError,
@@ -18,61 +18,19 @@ const state = {
   currentAffiliateLink: "",
 };
 
-function renderFatalMessage(message) {
-  const safeText = String(message || "Lỗi không xác định.");
-  document.body.innerHTML = `
-    <main style="min-height:100vh;display:grid;place-items:center;padding:24px;background:#f7f8fb;font-family:Segoe UI,Tahoma,Geneva,Verdana,sans-serif;color:#172332;">
-      <section style="max-width:560px;width:100%;background:#fff;border:1px solid #e6ecf5;border-radius:16px;padding:18px;">
-        <h1 style="margin:0 0 10px;font-size:20px;">UI không khởi tạo được</h1>
-        <p style="margin:0;color:#b23a2c;white-space:pre-wrap;">${safeText}</p>
-        <p style="margin:12px 0 0;color:#667085;">Hãy hard reload (Ctrl/Cmd+Shift+R). Nếu vẫn lỗi, mở <code>debug.html</code> để kiểm tra backend.</p>
-      </section>
-    </main>
-  `;
-}
-
-function ensureDomReady() {
-  const requiredKeys = [
-    "sourceInput",
-    "pasteBtn",
-    "createBtn",
-    "inputError",
-    "statusBanner",
-    "statusText",
-    "statusAction",
-    "resultBox",
-    "resultLink",
-    "copyBtn",
-    "buyBtn",
-  ];
-
-  const missing = requiredKeys.filter((key) => !dom[key]);
-  if (missing.length > 0) {
-    const message = `Thiếu DOM nodes: ${missing.join(", ")}.`;
-    renderFatalMessage(message);
-    throw new Error(message);
-  }
-}
-
-function installGlobalErrorGuards() {
-  window.addEventListener("error", (event) => {
-    const msg = event?.error?.message || event?.message || "Runtime error";
-    if (dom?.statusBanner && dom?.statusText) {
-      showStatus("error", `Lỗi runtime: ${msg}`);
-      return;
-    }
-    renderFatalMessage(`Lỗi runtime: ${msg}`);
-  });
-
-  window.addEventListener("unhandledrejection", (event) => {
-    const reason = event?.reason;
-    const msg = reason?.message || String(reason || "Unhandled promise rejection");
-    if (dom?.statusBanner && dom?.statusText) {
-      showStatus("error", `Lỗi promise: ${msg}`);
-      return;
-    }
-    renderFatalMessage(`Lỗi promise: ${msg}`);
-  });
+function requiredDomReady() {
+  return Boolean(
+    dom.sourceInput &&
+      dom.pasteBtn &&
+      dom.createBtn &&
+      dom.buyBtn &&
+      dom.inputError &&
+      dom.resultText &&
+      dom.popupOverlay &&
+      dom.popupBox &&
+      dom.popupText &&
+      dom.popupCloseBtn
+  );
 }
 
 function resetOutput() {
@@ -88,39 +46,35 @@ function setProcessing(nextBusy) {
 
 async function handlePasteClick(event) {
   event?.preventDefault?.();
-  event?.stopPropagation?.();
-
   if (state.busy) {
     return;
   }
 
-  hideStatus();
   clearInputError();
+  hideStatus();
 
   try {
     const text = await readClipboardText();
     if (!text || !text.trim()) {
-      showStatus("warning", "Clipboard đang trống.");
+      showStatus("error", "Clipboard đang trống.");
       return;
     }
     dom.sourceInput.value = text.trim();
     dom.sourceInput.focus();
   } catch {
     dom.sourceInput.focus();
-    showStatus("warning", "Không thể đọc clipboard. Hãy dùng Ctrl/Cmd+V để dán thủ công.");
+    showStatus("error", "Không đọc được clipboard. Hãy dán thủ công bằng Ctrl/Cmd+V.");
   }
 }
 
 async function handleCreateClick(event) {
   event?.preventDefault?.();
-  event?.stopPropagation?.();
-
   if (state.busy) {
     return;
   }
 
-  hideStatus();
   clearInputError();
+  hideStatus();
   resetOutput();
 
   const validation = parseAndValidateInput(dom.sourceInput.value);
@@ -130,93 +84,70 @@ async function handleCreateClick(event) {
   }
 
   if (!hasBackendEndpoint()) {
-    showStatus("error", "Chưa cấu hình backend queue endpoint.");
+    showStatus("error", "Chưa cấu hình BACKEND_BASE_URL.");
     return;
   }
 
   setProcessing(true);
-
   try {
-    showStatus("warning", "Đang xử lý và tạo link...");
-    const sync = await convertViaSyncApi(validation.url.toString(), "yt");
-    const affiliateLink = sync.affiliateLink || "";
-    if (!affiliateLink) {
-      throw new Error("Worker không trả affiliate link hợp lệ.");
+    const payload = await convertViaSyncApi(validation.url.toString(), "yt");
+    const link = String(payload?.affiliateLink || "").trim();
+    if (!link) {
+      throw new Error("Không nhận được affiliate link.");
     }
 
-    state.currentAffiliateLink = affiliateLink;
-    showStatus("success", "Tạo link thành công");
-    showResult(affiliateLink);
+    state.currentAffiliateLink = link;
+    showResult(link);
     setBuyEnabled(true);
+    showStatus("success", "Tạo link thành công.");
   } catch (error) {
-    showStatus("error", error?.message || "Đã xảy ra lỗi khi tạo link. Vui lòng thử lại.");
+    showStatus("error", error?.message || "Tạo link thất bại.");
   } finally {
     setProcessing(false);
   }
 }
 
-async function handleCopyClick(event) {
+function handleOpenClick(event) {
   event?.preventDefault?.();
-  event?.stopPropagation?.();
-
-  if (!state.currentAffiliateLink || state.busy) {
-    return;
-  }
-
-  try {
-    await copyText(state.currentAffiliateLink);
-    showStatus("success", "Đã copy link affiliate.");
-  } catch {
-    showStatus("error", "Không thể copy tự động. Vui lòng copy thủ công.");
-  }
-}
-
-function handleBuyClick(event) {
-  event?.preventDefault?.();
-  event?.stopPropagation?.();
-
-  if (!state.currentAffiliateLink || state.busy) {
+  if (state.busy || !state.currentAffiliateLink) {
     return;
   }
 
   const popup = window.open(state.currentAffiliateLink, "_blank", "noopener,noreferrer");
   if (!popup) {
-    showStatus("warning", "Trình duyệt đang chặn mở tab mới. Hãy cho phép popup và thử lại.");
+    showStatus("error", "Trình duyệt chặn mở tab mới. Hãy cho phép pop-up.");
   }
 }
 
 function bindEvents() {
-  // Defensive guard: block accidental form-like navigation from click/Enter.
-  document.addEventListener(
-    "submit",
-    (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-    },
-    true
-  );
-
+  dom.pasteBtn.addEventListener("click", handlePasteClick);
+  dom.createBtn.addEventListener("click", handleCreateClick);
+  dom.buyBtn.addEventListener("click", handleOpenClick);
+  dom.popupCloseBtn.addEventListener("click", hideStatus);
+  dom.popupOverlay.addEventListener("click", (event) => {
+    if (event.target === dom.popupOverlay) {
+      hideStatus();
+    }
+  });
   dom.sourceInput.addEventListener("keydown", (event) => {
     if (event.key === "Enter") {
-      event.preventDefault();
       handleCreateClick(event);
     }
   });
-
-  dom.pasteBtn.addEventListener("click", handlePasteClick);
-  dom.createBtn.addEventListener("click", handleCreateClick);
-  dom.copyBtn.addEventListener("click", handleCopyClick);
-  dom.buyBtn.addEventListener("click", handleBuyClick);
   dom.sourceInput.addEventListener("input", () => {
     clearInputError();
   });
 }
 
 function init() {
-  ensureDomReady();
-  installGlobalErrorGuards();
-  setBusy(false);
+  if (!requiredDomReady()) {
+    // Keep UI unchanged if DOM is incomplete; avoid white screen replacement.
+    console.error("DOM chưa sẵn sàng, kiểm tra index.html IDs.");
+    return;
+  }
   hideStatus();
+  clearInputError();
+  setBusy(false);
   resetOutput();
   bindEvents();
 }

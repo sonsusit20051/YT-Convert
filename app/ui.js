@@ -1,72 +1,84 @@
 import { dom } from "./dom.js";
 
-let currentActionHandler = null;
-
-function hideStatusAction() {
-  dom.statusAction.classList.add("hidden");
-  dom.statusAction.textContent = "";
-  dom.statusAction.onclick = null;
-  currentActionHandler = null;
-}
+let statusTimer = 0;
 
 export function setBusy(isBusy) {
-  dom.createBtn.disabled = isBusy;
-  dom.pasteBtn.disabled = isBusy;
-  dom.copyBtn.disabled = isBusy;
-
-  if (isBusy) {
-    dom.createBtn.querySelector("span").textContent = "Đang xử lý...";
-  } else {
-    dom.createBtn.querySelector("span").textContent = "Tạo Link Ngay";
+  if (dom.createBtn) {
+    dom.createBtn.disabled = isBusy;
+    dom.createBtn.textContent = isBusy ? "Đang tạo..." : "Tạo link";
+  }
+  if (dom.pasteBtn) {
+    dom.pasteBtn.disabled = isBusy;
   }
 }
 
 export function clearInputError() {
-  dom.inputError.textContent = "";
+  if (dom.inputError) {
+    dom.inputError.textContent = "";
+  }
 }
 
 export function showInputError(message) {
-  dom.inputError.textContent = message || "";
+  if (dom.inputError) {
+    dom.inputError.textContent = message || "";
+  }
 }
 
 export function hideStatus() {
-  dom.statusBanner.classList.add("hidden");
-  dom.statusBanner.classList.remove("success", "warning", "error");
-  dom.statusText.textContent = "";
-  hideStatusAction();
+  if (statusTimer) {
+    window.clearTimeout(statusTimer);
+    statusTimer = 0;
+  }
+
+  if (!dom.popupOverlay || !dom.popupBox || !dom.popupText) {
+    return;
+  }
+
+  dom.popupOverlay.classList.add("hidden");
+  dom.popupBox.classList.remove("error", "success");
+  dom.popupText.textContent = "";
 }
 
-export function showStatus(type, message, options = {}) {
-  dom.statusBanner.classList.remove("hidden", "success", "warning", "error");
-  dom.statusBanner.classList.add(type);
-  dom.statusText.textContent = message;
+export function showStatus(type, message) {
+  if (statusTimer) {
+    window.clearTimeout(statusTimer);
+    statusTimer = 0;
+  }
 
-  if (options.actionLabel && typeof options.onAction === "function") {
-    currentActionHandler = options.onAction;
-    dom.statusAction.textContent = options.actionLabel;
-    dom.statusAction.classList.remove("hidden");
-    dom.statusAction.onclick = () => {
-      if (currentActionHandler) {
-        currentActionHandler();
-      }
-    };
-  } else {
-    hideStatusAction();
+  if (!dom.popupOverlay || !dom.popupBox || !dom.popupText) {
+    return;
+  }
+
+  dom.popupOverlay.classList.remove("hidden");
+  dom.popupBox.classList.remove("error", "success");
+  if (type === "error") {
+    dom.popupBox.classList.add("error");
+  } else if (type === "success") {
+    dom.popupBox.classList.add("success");
+  }
+  dom.popupText.textContent = message || "";
+
+  if (type === "success") {
+    statusTimer = window.setTimeout(() => {
+      hideStatus();
+    }, 1400);
   }
 }
 
 export function showResult(link) {
-  dom.resultLink.href = link;
-  dom.resultLink.textContent = link;
-  dom.resultBox.classList.remove("hidden");
+  if (dom.resultText) {
+    dom.resultText.value = link || "";
+  }
 }
 
 export function hideResult() {
-  dom.resultBox.classList.add("hidden");
-  dom.resultLink.href = "#";
-  dom.resultLink.textContent = "";
+  if (dom.resultText) {
+    dom.resultText.value = "";
+  }
 }
 
 export function setBuyEnabled(enabled) {
-  dom.buyBtn.disabled = !enabled;
+  if (dom.buyBtn) {
+    dom.buyBtn.disabled = !enabled;
+  }
 }
