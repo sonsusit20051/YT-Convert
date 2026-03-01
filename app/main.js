@@ -91,7 +91,8 @@ async function handleCreateClick(event) {
   setProcessing(true);
   try {
     const payload = await convertViaSyncApi(validation.url.toString(), "yt");
-    const link = String(payload?.affiliateLink || "").trim();
+    const longLink = String(payload?.affiliateLink || "").trim();
+    const link = longLink;
     if (!link) {
       throw new Error("Không nhận được affiliate link.");
     }
