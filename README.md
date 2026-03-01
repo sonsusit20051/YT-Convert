@@ -96,7 +96,7 @@ Tóm tắt:
   - rồi mới encode vào `origin_link`
 - `affiliate_id` ưu tiên lấy từ worker extension đang online (account/tab affiliate trên trình duyệt). Nếu không lấy được mới fallback `DEFAULT_AFFILIATE_ID` (`17391540096`).
 - Chế độ YT-like: API có thể trả `affiliateLink` dạng `https://shp.today/...` (giống yt.shpee.cc). Link dài chuẩn vẫn có trong `longAffiliateLink`.
-- Thống kê request/ngày: `GET /api/stats` trả tổng request convert trong ngày (`today.total`).
+- Thống kê request/ngày (riêng tư): set `ADMIN_STATS_KEY`, sau đó chỉ ai có key mới gọi được `GET /api/stats`.
 
 ## API kiểu `yt.shpee.cc`
 

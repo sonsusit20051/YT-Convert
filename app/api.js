@@ -68,10 +68,6 @@ function jobEndpoint(jobId) {
   return toAbsoluteEndpoint(`/api/jobs/${encodeURIComponent(jobId)}`);
 }
 
-function statsEndpoint() {
-  return toAbsoluteEndpoint("/api/stats");
-}
-
 function sleep(ms) {
   return new Promise((resolve) => {
     window.setTimeout(resolve, ms);
@@ -112,17 +108,6 @@ async function fetchJsonWithTimeout(url, options = {}, timeoutMs = RESOLVE_TIMEO
 
 export function hasBackendEndpoint() {
   return Boolean(getBackendBaseUrl());
-}
-
-export async function getDailyStats() {
-  if (!hasBackendEndpoint()) {
-    return null;
-  }
-  const payload = await fetchJsonWithTimeout(statsEndpoint(), { method: "GET", cache: "no-store" });
-  if (!payload?.ok) {
-    throw new Error(payload?.message || "Không đọc được thống kê request.");
-  }
-  return payload;
 }
 
 export async function submitConvertJob(inputText) {

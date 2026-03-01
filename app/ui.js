@@ -35,13 +35,6 @@ export function renderCooldown(secondsLeft) {
   }
 }
 
-export function setDailyRequestCount(value) {
-  if (!dom.dailyRequestCount) {
-    return;
-  }
-  dom.dailyRequestCount.textContent = String(value ?? "-");
-}
-
 export function clearInputError() {
   if (dom.inputError) {
     dom.inputError.textContent = "";

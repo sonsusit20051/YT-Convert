@@ -95,12 +95,6 @@ body {
   font-weight: 600;
 }
 
-.daily-count {
-  margin: 8px 2px 0;
-  color: #35486f;
-  font-size: 13px;
-}
-
 .btn {
   height: 48px;
   border-radius: 12px;

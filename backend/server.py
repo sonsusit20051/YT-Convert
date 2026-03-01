@@ -27,6 +27,7 @@ DEFAULT_AFFILIATE_ID = os.getenv("DEFAULT_AFFILIATE_ID", "17391540096").strip()
 FORCED_AFFILIATE_ID = os.getenv("FORCED_AFFILIATE_ID", "").strip()
 BASE_REDIRECT = os.getenv("BASE_REDIRECT", "https://s.shopee.vn/an_redir").strip()
 FORCE_YT_MODE = os.getenv("FORCE_YT_MODE", "1") == "1"
+ADMIN_STATS_KEY = os.getenv("ADMIN_STATS_KEY", "").strip()
 
 URL_CANDIDATE_REGEX = re.compile(
     r"((?:https?://)?(?:[a-z0-9-]+\.)*(?:shopee\.[a-z.]{2,}|shope\.ee|shp\.ee)(?:/[^\s<>\"']*)?)",
@@ -384,6 +385,18 @@ def request_stats_today():
         },
         "totalSinceStart": total_all,
     }
+
+
+def is_stats_authorized(handler: BaseHTTPRequestHandler, query: dict):
+    if not ADMIN_STATS_KEY:
+        return True
+    provided = (
+        handler.headers.get("X-Admin-Key")
+        or query.get("key")
+        or query.get("admin_key")
+        or ""
+    )
+    return str(provided).strip() == ADMIN_STATS_KEY
 
 
 def parse_affiliate_meta(affiliate_link: str):
@@ -827,7 +840,6 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == "/api/health":
             summary = workers_summary()
-            stats = request_stats_today()
             json_response(
                 self,
                 200,
@@ -835,13 +847,15 @@ class Handler(BaseHTTPRequestHandler):
                     "ok": True,
                     "workers": summary,
                     "queueSize": queue_size(),
-                    "requestsToday": stats["today"]["total"],
                     "timestamp": now_ts(),
                 },
             )
             return
 
         if path == "/api/stats":
+            if not is_stats_authorized(self, query):
+                json_response(self, 403, {"ok": False, "message": "Forbidden"})
+                return
             stats = request_stats_today()
             json_response(
                 self,

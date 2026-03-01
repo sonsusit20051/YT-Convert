@@ -1,11 +1,10 @@
-import { convertViaSyncApi, getDailyStats, hasBackendEndpoint } from "./api.js";
+import { convertViaSyncApi, hasBackendEndpoint } from "./api.js";
 import { readClipboardText } from "./clipboard.js";
 import { dom } from "./dom.js";
 import {
   clearInputError,
   hideStatus,
   renderCooldown,
-  setDailyRequestCount,
   setBusy,
   setBuyEnabled,
   showInputError,
@@ -71,19 +70,6 @@ function startCooldown(seconds = CREATE_COOLDOWN_SEC) {
     }
     syncCooldownUi();
   }, 200);
-}
-
-async function refreshDailyStats() {
-  if (!hasBackendEndpoint()) {
-    setDailyRequestCount("-");
-    return;
-  }
-  try {
-    const payload = await getDailyStats();
-    setDailyRequestCount(payload?.today?.total ?? 0);
-  } catch {
-    setDailyRequestCount("-");
-  }
 }
 
 function setProcessing(nextBusy) {
@@ -167,7 +153,6 @@ async function handleCreateClick(event) {
     setProcessing(false);
     if (requestSent) {
       startCooldown(CREATE_COOLDOWN_SEC);
-      refreshDailyStats();
     }
   }
 }
@@ -210,7 +195,6 @@ function init() {
   resetOutput();
   renderCooldown(0);
   bindEvents();
-  refreshDailyStats();
 }
 
 init();
