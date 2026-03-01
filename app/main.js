@@ -84,7 +84,10 @@ async function handleCreateClick(event) {
   }
 
   if (!hasBackendEndpoint()) {
-    showStatus("error", "Chưa cấu hình BACKEND_BASE_URL.");
+    showStatus(
+      "error",
+      "Chưa cấu hình backend public. Mở web với ?api=https://your-backend-domain rồi thử lại."
+    );
     return;
   }
 

@@ -35,6 +35,7 @@ export function hideStatus() {
   }
 
   dom.popupOverlay.classList.add("hidden");
+  dom.popupOverlay.style.display = "";
   dom.popupBox.classList.remove("error", "success");
   dom.popupText.textContent = "";
 }
@@ -50,6 +51,7 @@ export function showStatus(type, message) {
   }
 
   dom.popupOverlay.classList.remove("hidden");
+  dom.popupOverlay.style.display = "flex";
   dom.popupBox.classList.remove("error", "success");
   if (type === "error") {
     dom.popupBox.classList.add("error");
@@ -61,7 +63,7 @@ export function showStatus(type, message) {
   if (type === "success") {
     statusTimer = window.setTimeout(() => {
       hideStatus();
-    }, 1400);
+    }, 2200);
   }
 }
 

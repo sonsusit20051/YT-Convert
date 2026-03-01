@@ -5,12 +5,64 @@ import {
   RESOLVE_TIMEOUT_MS,
 } from "./config.js";
 
-function toAbsoluteEndpoint(path) {
-  return `${String(BACKEND_BASE_URL || "").replace(/\/$/, "")}${path}`;
+function isLoopbackHost(host) {
+  const normalized = String(host || "").toLowerCase();
+  return normalized === "localhost" || normalized === "127.0.0.1" || normalized === "::1";
 }
 
-const CONVERT_ENDPOINT = toAbsoluteEndpoint("/api/convert");
-const SYNC_CONVERT_ENDPOINT = toAbsoluteEndpoint("/");
+function isLoopbackUrl(urlText) {
+  try {
+    const parsed = new URL(String(urlText || ""));
+    return isLoopbackHost(parsed.hostname);
+  } catch {
+    return false;
+  }
+}
+
+function getBackendBaseUrl() {
+  let queryBase = "";
+  try {
+    const params = new URLSearchParams(window.location.search);
+    queryBase = String(params.get("api") || "").trim();
+    if (queryBase) {
+      window.localStorage.setItem("BACKEND_BASE_URL", queryBase);
+    }
+  } catch {
+    // Ignore query parsing/storage errors.
+  }
+
+  let storedBase = "";
+  try {
+    storedBase = String(window.localStorage.getItem("BACKEND_BASE_URL") || "").trim();
+  } catch {
+    // Ignore storage errors.
+  }
+
+  const fallbackBase = String(BACKEND_BASE_URL || "").trim();
+  const runningOnLocalPage = isLoopbackHost(window.location.hostname);
+
+  // Prevent publish pages from silently using localhost backend.
+  if (!runningOnLocalPage && !queryBase && isLoopbackUrl(storedBase)) {
+    storedBase = "";
+    try {
+      window.localStorage.removeItem("BACKEND_BASE_URL");
+    } catch {
+      // Ignore storage errors.
+    }
+  }
+
+  let base = queryBase || storedBase || fallbackBase;
+  if (!runningOnLocalPage && isLoopbackUrl(base)) {
+    base = "";
+  }
+
+  return base.replace(/\/$/, "");
+}
+
+function toAbsoluteEndpoint(path) {
+  const base = getBackendBaseUrl();
+  return `${base}${path}`;
+}
 
 function jobEndpoint(jobId) {
   return toAbsoluteEndpoint(`/api/jobs/${encodeURIComponent(jobId)}`);
@@ -55,16 +107,16 @@ async function fetchJsonWithTimeout(url, options = {}, timeoutMs = RESOLVE_TIMEO
 }
 
 export function hasBackendEndpoint() {
-  return Boolean(BACKEND_BASE_URL);
+  return Boolean(getBackendBaseUrl());
 }
 
 export async function submitConvertJob(inputText) {
-  if (!BACKEND_BASE_URL) {
+  if (!hasBackendEndpoint()) {
     throw new Error("Backend endpoint chưa được cấu hình.");
   }
 
   const payload = await fetchJsonWithTimeout(
-    CONVERT_ENDPOINT,
+    toAbsoluteEndpoint("/api/convert"),
     {
       method: "POST",
       headers: {
@@ -83,7 +135,7 @@ export async function submitConvertJob(inputText) {
 }
 
 export async function convertViaSyncApi(inputText, mode = "yt") {
-  if (!BACKEND_BASE_URL) {
+  if (!hasBackendEndpoint()) {
     throw new Error("Backend endpoint chưa được cấu hình.");
   }
 
@@ -93,7 +145,7 @@ export async function convertViaSyncApi(inputText, mode = "yt") {
   });
 
   const payload = await fetchJsonWithTimeout(
-    `${SYNC_CONVERT_ENDPOINT}?${query.toString()}`,
+    `${toAbsoluteEndpoint("/")}?${query.toString()}`,
     { method: "GET", cache: "no-store" },
     RESOLVE_TIMEOUT_MS + 80000
   );
