@@ -3,12 +3,10 @@ import { readClipboardText } from "./clipboard.js";
 import { dom } from "./dom.js";
 import {
   clearInputError,
-  hideResult,
   hideStatus,
   setBusy,
   setBuyEnabled,
   showInputError,
-  showResult,
   showStatus,
 } from "./ui.js";
 import { parseAndValidateInput } from "./validators.js";
@@ -25,14 +23,12 @@ function requiredDomReady() {
       dom.createBtn &&
       dom.buyBtn &&
       dom.inputError &&
-      dom.resultText &&
       dom.statusToast
   );
 }
 
 function resetOutput() {
   state.currentAffiliateLink = "";
-  hideResult();
   setBuyEnabled(false);
 }
 
@@ -91,16 +87,14 @@ async function handleCreateClick(event) {
   setProcessing(true);
   try {
     const payload = await convertViaSyncApi(validation.url.toString(), "yt");
-    const longLink = String(payload?.affiliateLink || "").trim();
-    const link = longLink;
+    const link = String(payload?.affiliateLink || payload?.longAffiliateLink || "").trim();
     if (!link) {
       throw new Error("Không nhận được affiliate link.");
     }
 
     state.currentAffiliateLink = link;
-    showResult(link);
     setBuyEnabled(true);
-    showStatus("success", "Tạo link thành công");
+    showStatus("success", "Link đã chuyển đổi xong.");
   } catch (error) {
     console.error(error);
     const msg = String(error?.message || "").trim();

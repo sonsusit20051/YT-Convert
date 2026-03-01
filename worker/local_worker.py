@@ -8,7 +8,7 @@ import sys
 import time
 import uuid
 from urllib.error import HTTPError, URLError
-from urllib.parse import parse_qsl, quote, urlencode, urlparse, urlunparse
+from urllib.parse import parse_qsl, quote, urlparse, urlunparse
 from urllib.request import Request, urlopen
 
 SERVER_BASE = os.getenv("SERVER_BASE", "http://localhost:8787").rstrip("/")
@@ -21,9 +21,6 @@ BASE_REDIRECT = os.getenv("BASE_REDIRECT", "https://s.shopee.vn/an_redir")
 RESOLVE_TIMEOUT_SEC = float(os.getenv("RESOLVE_TIMEOUT_SEC", "10"))
 DEFAULT_WAIT_SEC = float(os.getenv("DEFAULT_WAIT_SEC", "0.35"))
 ALLOW_INSECURE_TLS_RETRY = os.getenv("ALLOW_INSECURE_TLS_RETRY", "1") == "1"
-
-ALLOWED_QUERY_KEYS = {"gads_t_sig", "extraparams"}
-
 
 def is_shortlink_host(hostname: str) -> bool:
     host = (hostname or "").lower()
@@ -92,20 +89,29 @@ def resolve_landing_url(input_url: str):
 
 
 def clean_landing_url(parsed_url):
+    if not is_shopee_landing_host(parsed_url.hostname or ""):
+        raise ValueError("Landing URL không thuộc domain Shopee hợp lệ.")
+
     shop_id, item_id = extract_product_ids(parsed_url.path)
     if not shop_id or not item_id:
-        raise ValueError("Không trích xuất được shop_id/item_id để chuẩn hóa path /product.")
+        raise ValueError("Không nhận diện được shop_id/item_id từ landing URL.")
 
-    pairs = parse_qsl(parsed_url.query, keep_blank_values=True)
-    filtered = [(k, v) for (k, v) in pairs if k.lower() in ALLOWED_QUERY_KEYS]
+    gads_sig = ""
+    for k, v in parse_qsl(parsed_url.query, keep_blank_values=True):
+        if k.lower() == "gads_t_sig" and v:
+            gads_sig = v
+            break
 
-    cleaned = parsed_url._replace(
+    if not gads_sig:
+        raise ValueError("Landing URL không có gads_t_sig. Không thể tạo link chuẩn.")
+
+    canonical = parsed_url._replace(
         scheme="https",
         path=f"/product/{shop_id}/{item_id}",
-        query=urlencode(filtered, doseq=True),
+        query=f"gads_t_sig={quote(gads_sig, safe='')}",
         fragment="",
     )
-    return urlunparse(cleaned)
+    return urlunparse(canonical)
 
 
 def build_affiliate_link(clean_url: str) -> str:
@@ -117,16 +123,12 @@ def build_affiliate_link(clean_url: str) -> str:
 
 def convert_url(input_url: str):
     parsed = resolve_landing_url(input_url)
-    if not has_gads_sig(parsed):
-        raise ValueError("Landing URL không có gads_t_sig. Không thể tạo link chuẩn.")
-
-    landing_url = urlunparse(parsed)
     clean_url = clean_landing_url(parsed)
     affiliate_link = build_affiliate_link(clean_url)
 
     return {
         "affiliateLink": affiliate_link,
-        "landingUrl": landing_url,
+        "landingUrl": urlunparse(parsed),
         "cleanLandingUrl": clean_url,
     }
 

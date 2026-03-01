@@ -16,14 +16,16 @@ JOB_TTL_SEC = int(os.getenv("JOB_TTL_SEC", "300"))
 JOB_PROCESS_TIMEOUT_SEC = int(os.getenv("JOB_PROCESS_TIMEOUT_SEC", "120"))
 WORKER_STALE_SEC = int(os.getenv("WORKER_STALE_SEC", "60"))
 MAX_BODY_BYTES = 1024 * 1024
-ALLOWED_ORIGIN_QUERY_KEYS = ("gads_t_sig", "extraParams")
 SYNC_WAIT_TIMEOUT_SEC = int(os.getenv("SYNC_WAIT_TIMEOUT_SEC", "90"))
 SYNC_WAIT_POLL_MS = int(os.getenv("SYNC_WAIT_POLL_MS", "220"))
 SHORT_CODE_LEN = int(os.getenv("SHORT_CODE_LEN", "4"))
 SHORT_TTL_SEC = int(os.getenv("SHORT_TTL_SEC", "604800"))
 SHORT_PUBLIC_BASE = os.getenv("SHORT_PUBLIC_BASE", "").strip()
 SUB_ID_YT = os.getenv("SUB_ID_YT", "YT3")
-FORCED_AFFILIATE_ID = os.getenv("FORCED_AFFILIATE_ID", "17391540096").strip()
+DEFAULT_AFFILIATE_ID = os.getenv("DEFAULT_AFFILIATE_ID", "17391540096").strip()
+FORCED_AFFILIATE_ID = os.getenv("FORCED_AFFILIATE_ID", "").strip()
+BASE_REDIRECT = os.getenv("BASE_REDIRECT", "https://s.shopee.vn/an_redir").strip()
+FORCE_YT_MODE = os.getenv("FORCE_YT_MODE", "1") == "1"
 
 URL_CANDIDATE_REGEX = re.compile(
     r"((?:https?://)?(?:[a-z0-9-]+\.)*(?:shopee\.[a-z.]{2,}|shope\.ee|shp\.ee)(?:/[^\s<>\"']*)?)",
@@ -90,30 +92,29 @@ def canonicalize_landing_url(raw_url: str):
     if not parsed.scheme or not parsed.netloc:
         return None
 
+    if not is_allowed_host(parsed.hostname or ""):
+        return None
+
+    if not re.match(r"^([a-z0-9-]+\.)*shopee\.[a-z.]{2,}$", parsed.hostname or "", re.IGNORECASE):
+        return None
+
     shop_id, item_id = extract_product_ids(parsed.path)
     if not shop_id or not item_id:
         return None
 
-    keep = {}
+    gads_sig = ""
     for k, v in parse_qsl(parsed.query, keep_blank_values=True):
-        lk = k.lower()
-        if lk == "gads_t_sig" and v:
-            keep["gads_t_sig"] = v
-        elif lk == "extraparams":
-            keep["extraParams"] = v
+        if k.lower() == "gads_t_sig" and v:
+            gads_sig = v
+            break
 
-    if "gads_t_sig" not in keep:
+    if not gads_sig:
         return None
-
-    ordered = []
-    for key in ALLOWED_ORIGIN_QUERY_KEYS:
-        if key in keep:
-            ordered.append((key, keep[key]))
 
     canonical = parsed._replace(
         scheme="https",
         path=f"/product/{shop_id}/{item_id}",
-        query=urlencode(ordered, doseq=True),
+        query=urlencode([("gads_t_sig", gads_sig)], doseq=True),
         fragment="",
     )
     return urlunparse(canonical)
@@ -148,6 +149,60 @@ def rebuild_affiliate_link(original_affiliate_link: str, canonical_landing_url: 
 
     rebuilt = parsed._replace(query=urlencode(next_query, doseq=True), fragment="")
     return urlunparse(rebuilt)
+
+
+def extract_affiliate_parts(affiliate_link: str):
+    parsed = urlparse(str(affiliate_link or ""))
+    if not parsed.query:
+        return "", "", ""
+
+    affiliate_id = ""
+    sub_id = ""
+    origin_link = ""
+    for k, v in parse_qsl(parsed.query, keep_blank_values=True):
+        if k == "affiliate_id":
+            affiliate_id = v
+        elif k == "sub_id":
+            sub_id = v
+        elif k == "origin_link":
+            origin_link = v
+    return affiliate_id, sub_id, origin_link
+
+
+def build_strict_affiliate_link(origin_link_url: str, affiliate_id: str, sub_id: str):
+    parsed_base = urlparse(str(BASE_REDIRECT or ""))
+    if not parsed_base.scheme or not parsed_base.netloc:
+        return ""
+
+    aff = str(affiliate_id or "").strip()
+    sid = str(sub_id or "").strip()
+    if not aff or not sid or not origin_link_url:
+        return ""
+
+    next_query = [
+        ("affiliate_id", aff),
+        ("sub_id", sid),
+        ("origin_link", str(origin_link_url)),
+    ]
+    rebuilt = parsed_base._replace(query=urlencode(next_query, doseq=True), fragment="")
+    return urlunparse(rebuilt)
+
+
+def choose_yt_sub_id(sub_id: str):
+    sid = str(sub_id or "").strip()
+    if sid and sid.upper().startswith("YT3"):
+        return sid
+    return SUB_ID_YT
+
+
+def choose_affiliate_id(*candidates):
+    if FORCED_AFFILIATE_ID:
+        return FORCED_AFFILIATE_ID
+    for c in candidates:
+        v = str(c or "").strip()
+        if v:
+            return v
+    return DEFAULT_AFFILIATE_ID
 
 
 def override_affiliate_meta_in_affiliate_link(
@@ -236,6 +291,11 @@ def public_job_view(job: dict):
     if job["status"] == "success":
         view["result"] = {
             "affiliateLink": job.get("affiliateLink", ""),
+            "longAffiliateLink": job.get("longAffiliateLink", ""),
+            "campaignRawAffiliateLink": job.get("campaignRawAffiliateLink", ""),
+            "campaignSource": job.get("campaignSource", ""),
+            "campaignAffiliateId": job.get("campaignAffiliateId", ""),
+            "campaignSubId": job.get("campaignSubId", ""),
             "landingUrl": job.get("landingUrl", ""),
             "cleanLandingUrl": job.get("cleanLandingUrl", ""),
             "workerId": job.get("assignedWorker", ""),
@@ -252,18 +312,16 @@ def query_dict(query: str):
 
 
 def parse_affiliate_meta(affiliate_link: str):
-    parsed = urlparse(str(affiliate_link or ""))
-    if not parsed.query:
-        return "", ""
-
-    affiliate_id = ""
-    sub_id = ""
-    for k, v in parse_qsl(parsed.query, keep_blank_values=True):
-        if k == "affiliate_id":
-            affiliate_id = v
-        elif k == "sub_id":
-            sub_id = v
+    affiliate_id, sub_id, _ = extract_affiliate_parts(affiliate_link)
     return affiliate_id, sub_id
+
+
+def is_http_url(text: str):
+    try:
+        parsed = urlparse(str(text or "").strip())
+        return parsed.scheme in ("http", "https") and bool(parsed.netloc)
+    except Exception:
+        return False
 
 
 def random_code(length: int = SHORT_CODE_LEN):
@@ -434,6 +492,11 @@ def create_job(input_raw: str, normalized_url: str):
         "startedAt": None,
         "assignedWorker": None,
         "affiliateLink": "",
+        "longAffiliateLink": "",
+        "campaignRawAffiliateLink": "",
+        "campaignSource": "",
+        "campaignAffiliateId": "",
+        "campaignSubId": "",
         "landingUrl": "",
         "cleanLandingUrl": "",
     }
@@ -501,17 +564,49 @@ def submit_job_result(body: dict):
             if not affiliate_link:
                 return {"ok": False, "status": 400, "message": "Thiếu affiliateLink cho kết quả thành công."}
 
+            campaign_raw_link = str(body.get("campaignRawAffiliateLink") or "").strip()
+            campaign_source = str(body.get("campaignSource") or "").strip()
+            campaign_aff_id = str(body.get("campaignAffiliateId") or "").strip()
+            campaign_sub_id = str(body.get("campaignSubId") or "").strip()
+
             raw_landing_url = str(body.get("landingUrl") or "").strip()
             raw_clean_url = str(body.get("cleanLandingUrl") or "").strip()
             canonical_clean = canonicalize_landing_url(raw_clean_url or raw_landing_url)
-            canonical_affiliate = rebuild_affiliate_link(affiliate_link, canonical_clean) if canonical_clean else None
-            final_affiliate_link = override_affiliate_meta_in_affiliate_link(
-                canonical_affiliate or affiliate_link, FORCED_AFFILIATE_ID
-            )
+            if not canonical_clean:
+                return {
+                    "ok": False,
+                    "status": 422,
+                    "message": "Landing URL thiếu gads_t_sig hoặc không hợp lệ.",
+                }
+
+            src_aff_id, src_sub_id, _ = extract_affiliate_parts(affiliate_link)
+            if not src_aff_id and campaign_aff_id:
+                src_aff_id = campaign_aff_id
+            if not src_sub_id and campaign_sub_id:
+                src_sub_id = campaign_sub_id
+            worker_aff_id = str((WORKERS.get(worker_id) or {}).get("affiliateId") or "").strip()
+            final_aff_id = choose_affiliate_id(worker_aff_id, campaign_aff_id, src_aff_id)
+            final_sub_id = choose_yt_sub_id(src_sub_id)
+            final_affiliate_link = build_strict_affiliate_link(canonical_clean, final_aff_id, final_sub_id)
+            if not final_affiliate_link:
+                return {"ok": False, "status": 422, "message": "Không build được affiliate link chuẩn."}
+
+            display_affiliate = ""
+            if is_http_url(campaign_raw_link):
+                display_affiliate = campaign_raw_link
+            elif is_http_url(affiliate_link):
+                display_affiliate = affiliate_link
+            else:
+                display_affiliate = final_affiliate_link
 
             job["status"] = "success"
             job["message"] = "Tạo link thành công."
-            job["affiliateLink"] = final_affiliate_link
+            job["affiliateLink"] = display_affiliate
+            job["longAffiliateLink"] = final_affiliate_link
+            job["campaignRawAffiliateLink"] = campaign_raw_link
+            job["campaignSource"] = campaign_source
+            job["campaignAffiliateId"] = campaign_aff_id or src_aff_id or worker_aff_id
+            job["campaignSubId"] = campaign_sub_id or src_sub_id
             job["landingUrl"] = raw_landing_url
             job["cleanLandingUrl"] = canonical_clean or raw_clean_url
             job["updatedAt"] = ts
@@ -580,7 +675,11 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if path == "/" and query.get("url"):
-            mode = "yt" if str(query.get("yt", "")).lower() in ("1", "true", "yes", "yt") else "default"
+            if FORCE_YT_MODE:
+                mode = "yt"
+            else:
+                yt_raw = str(query.get("yt", "1")).strip().lower()
+                mode = "default" if yt_raw in ("0", "false", "no", "off") else "yt"
             parsed_input = normalize_input(query.get("url", ""))
             if not parsed_input["ok"]:
                 json_response(self, 400, {"success": False, "message": parsed_input["error"], "mode": mode})
@@ -597,28 +696,46 @@ class Handler(BaseHTTPRequestHandler):
                 return
 
             final_job = done["job"]
-            long_affiliate = str(final_job.get("affiliateLink") or "")
-            long_affiliate = override_affiliate_meta_in_affiliate_link(
-                long_affiliate,
-                FORCED_AFFILIATE_ID,
-                SUB_ID_YT if mode == "yt" else None,
-            )
-            affiliate_id, sub_id = parse_affiliate_meta(long_affiliate)
-            effective_sub_id = sub_id or (SUB_ID_YT if mode == "yt" else "")
-            short_link, code = make_short_link(self, long_affiliate)
+            display_affiliate = str(final_job.get("affiliateLink") or "").strip()
+            long_affiliate = str(final_job.get("longAffiliateLink") or "").strip()
+            if not long_affiliate:
+                long_affiliate = display_affiliate
+
+            long_aff_id, long_sub_id = parse_affiliate_meta(long_affiliate)
+            campaign_aff_id = str(final_job.get("campaignAffiliateId") or "").strip()
+            campaign_sub_id = str(final_job.get("campaignSubId") or "").strip()
+
+            affiliate_id, sub_id = parse_affiliate_meta(display_affiliate)
+            if not affiliate_id:
+                affiliate_id = campaign_aff_id or long_aff_id
+            if not sub_id:
+                sub_id = campaign_sub_id or long_sub_id
+
+            if mode == "yt":
+                sub_id = choose_yt_sub_id(sub_id)
+
+            if not display_affiliate:
+                display_affiliate = long_affiliate
+
+            short_link = ""
+            code = ""
+            if is_http_url(long_affiliate):
+                short_link, code = make_short_link(self, long_affiliate)
 
             json_response(
                 self,
                 200,
                 {
                     "success": True,
-                    # Keep affiliateLink as canonical long URL so client output matches required format.
-                    "affiliateLink": long_affiliate,
+                    # Keep yt-like output: affiliateLink can be campaign shortlink (e.g., shp.today).
+                    "affiliateLink": display_affiliate,
+                    # Provide canonical long form for debugging/fallback.
+                    "longAffiliateLink": long_affiliate,
                     # Provide optional short link for convenience.
                     "shortAffiliateLink": short_link,
                     "mode": mode,
                     "affiliate_id": affiliate_id,
-                    "sub_id": effective_sub_id,
+                    "sub_id": sub_id,
                     "jobId": final_job.get("id"),
                     "shortCode": code,
                 },

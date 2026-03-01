@@ -4,6 +4,5 @@ export const dom = {
   createBtn: document.getElementById("createBtn"),
   buyBtn: document.getElementById("buyBtn"),
   inputError: document.getElementById("inputError"),
-  resultText: document.getElementById("resultText"),
   statusToast: document.getElementById("statusToast"),
 };

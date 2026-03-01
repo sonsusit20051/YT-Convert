@@ -1,4 +1,7 @@
-const ALLOWED_QUERY_KEYS = new Set(["gads_t_sig", "extraparams"]);
+const ALLOWED_QUERY_KEYS = new Set(["gads_t_sig"]);
+const AFFILIATE_TAB_URL = "https://affiliate.shopee.vn/*";
+const YT_MAPPING_API = "https://yt.shpee.cc/";
+const TAB_RPC_TIMEOUT_MS = 15000;
 
 const defaults = {
   enabled: true,
@@ -36,6 +39,31 @@ async function saveSettings(patch) {
 
 function normalizeBaseUrl(base) {
   return String(base || "").replace(/\/$/, "");
+}
+
+function parseAffiliateParts(linkText) {
+  try {
+    const parsed = new URL(String(linkText || ""));
+    return {
+      affiliateId: String(parsed.searchParams.get("affiliate_id") || "").trim(),
+      subId: String(parsed.searchParams.get("sub_id") || "").trim(),
+      originLink: String(parsed.searchParams.get("origin_link") || "").trim(),
+    };
+  } catch {
+    return { affiliateId: "", subId: "", originLink: "" };
+  }
+}
+
+function toAbsoluteUrl(raw, base = "") {
+  const text = String(raw || "").trim();
+  if (!text) {
+    return "";
+  }
+  try {
+    return new URL(text, base || undefined).toString();
+  } catch {
+    return "";
+  }
 }
 
 function isShortlinkHost(hostname) {
@@ -100,6 +128,160 @@ function buildAffiliateLink(cleanUrl, settings, affiliateId) {
   return `${settings.baseRedirect}?affiliate_id=${aid}&sub_id=${sid}&origin_link=${origin}`;
 }
 
+async function findAffiliateTab() {
+  const tabs = await chrome.tabs.query({ url: AFFILIATE_TAB_URL });
+  if (!tabs.length) {
+    return null;
+  }
+  return tabs.find((tab) => tab.active) || tabs[0] || null;
+}
+
+function sendMessageToTab(tabId, message, timeoutMs = TAB_RPC_TIMEOUT_MS) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error("Tab affiliate phản hồi quá chậm."));
+    }, Math.max(timeoutMs, 1500));
+
+    chrome.tabs.sendMessage(tabId, message, (response) => {
+      clearTimeout(timer);
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message));
+        return;
+      }
+      resolve(response || {});
+    });
+  });
+}
+
+async function requestCampaignMetaDirect(inputUrl) {
+  const endpoint = `${YT_MAPPING_API}?url=${encodeURIComponent(String(inputUrl || ""))}&yt=1`;
+  const response = await fetch(endpoint, {
+    method: "GET",
+    cache: "no-store",
+    credentials: "include",
+    headers: {
+      Accept: "application/json, text/javascript, */*; q=0.01",
+      "X-Requested-With": "XMLHttpRequest",
+    },
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok || !payload?.success) {
+    throw new Error(payload?.message || `YT mapping API lỗi HTTP ${response.status}`);
+  }
+
+  const affiliateLink = String(payload.affiliateLink || "").trim();
+  const parsed = parseAffiliateParts(affiliateLink);
+  return {
+    source: "yt-api-direct",
+    affiliateLink,
+    affiliateId: String(payload.affiliate_id || parsed.affiliateId || "").trim(),
+    subId: String(payload.sub_id || parsed.subId || "").trim(),
+  };
+}
+
+async function requestCampaignMetaViaAffiliateTab(inputUrl) {
+  const tab = await findAffiliateTab();
+  if (!tab?.id) {
+    throw new Error("Không tìm thấy tab affiliate.shopee.vn. Hãy mở tab và đăng nhập.");
+  }
+
+  const response = await sendMessageToTab(tab.id, { type: "CREATE_YT_MAPPING", url: inputUrl });
+  if (!response?.ok) {
+    throw new Error(response?.message || "Tab affiliate không tạo được mapping YT.");
+  }
+
+  const meta = response.meta || {};
+  const affiliateLink = String(meta.affiliateLink || "").trim();
+  const parsed = parseAffiliateParts(affiliateLink);
+  return {
+    source: String(meta.source || "affiliate-tab"),
+    affiliateLink,
+    affiliateId: String(meta.affiliateId || parsed.affiliateId || "").trim(),
+    subId: String(meta.subId || parsed.subId || "").trim(),
+  };
+}
+
+async function expandAffiliateLinkContext(affiliateLink) {
+  const directParts = parseAffiliateParts(affiliateLink);
+  if (directParts.originLink) {
+    return {
+      expandedAffiliateLink: affiliateLink,
+      ...directParts,
+    };
+  }
+
+  const link = toAbsoluteUrl(affiliateLink);
+  if (!link) {
+    return { expandedAffiliateLink: "", affiliateId: "", subId: "", originLink: "" };
+  }
+
+  // Try to read first redirect hop (often shp.today -> s.shopee.vn/an_redir?...).
+  try {
+    const response = await fetch(link, {
+      method: "GET",
+      redirect: "manual",
+      cache: "no-store",
+      credentials: "include",
+    });
+
+    const location = toAbsoluteUrl(response.headers.get("location") || "", link);
+    if (location) {
+      const parts = parseAffiliateParts(location);
+      if (parts.originLink || parts.subId || parts.affiliateId) {
+        return {
+          expandedAffiliateLink: location,
+          ...parts,
+        };
+      }
+    }
+  } catch {
+    // Fallback below.
+  }
+
+  // Fallback: follow redirects and parse the final URL if possible.
+  try {
+    const response = await fetch(link, {
+      method: "GET",
+      redirect: "follow",
+      cache: "no-store",
+      credentials: "include",
+    });
+    const finalUrl = String(response?.url || "").trim();
+    const parts = parseAffiliateParts(finalUrl);
+    return {
+      expandedAffiliateLink: finalUrl,
+      ...parts,
+    };
+  } catch {
+    return { expandedAffiliateLink: "", affiliateId: "", subId: "", originLink: "" };
+  }
+}
+
+async function requestCampaignMeta(inputUrl) {
+  try {
+    const base = await requestCampaignMetaViaAffiliateTab(inputUrl);
+    const expanded = await expandAffiliateLinkContext(base.affiliateLink);
+    return {
+      ...base,
+      affiliateId: base.affiliateId || expanded.affiliateId || "",
+      subId: base.subId || expanded.subId || "",
+      originLink: expanded.originLink || "",
+      expandedAffiliateLink: expanded.expandedAffiliateLink || "",
+    };
+  } catch (tabError) {
+    const fallback = await requestCampaignMetaDirect(inputUrl);
+    const expanded = await expandAffiliateLinkContext(fallback.affiliateLink);
+    return {
+      ...fallback,
+      affiliateId: fallback.affiliateId || expanded.affiliateId || "",
+      subId: fallback.subId || expanded.subId || "",
+      originLink: expanded.originLink || "",
+      expandedAffiliateLink: expanded.expandedAffiliateLink || "",
+      fallbackFrom: tabError?.message || "",
+    };
+  }
+}
+
 async function detectAffiliateIdFromTabs() {
   const tabs = await chrome.tabs.query({ url: "https://affiliate.shopee.vn/*" });
 
@@ -122,14 +304,14 @@ async function detectAffiliateIdFromTabs() {
 }
 
 async function getAffiliateId(settings) {
-  if (String(settings.affiliateId || "").trim()) {
-    return String(settings.affiliateId);
-  }
-
   const detected = await detectAffiliateIdFromTabs();
   if (detected) {
     await saveSettings({ affiliateId: detected });
     return detected;
+  }
+
+  if (String(settings.affiliateId || "").trim()) {
+    return String(settings.affiliateId);
   }
 
   const fallback = String(defaults.affiliateId || "").trim();
@@ -164,7 +346,11 @@ async function resolveLanding(inputUrl) {
 }
 
 async function convertJob(job, settings) {
-  const landingUrl = await resolveLanding(job.url);
+  const sourceUrl = String(job.url || "").trim();
+  const campaignMeta = await requestCampaignMeta(sourceUrl);
+  const mappedOrigin = String(campaignMeta.originLink || "").trim();
+  const landingInput = mappedOrigin || sourceUrl;
+  const landingUrl = await resolveLanding(landingInput);
   if (!isShopeeHost(landingUrl.hostname)) {
     throw new Error("URL đích không thuộc domain Shopee.");
   }
@@ -174,13 +360,23 @@ async function convertJob(job, settings) {
   }
 
   const cleanUrl = cleanLandingUrl(landingUrl);
-  const affiliateId = await getAffiliateId(settings);
-  const affiliateLink = buildAffiliateLink(cleanUrl, settings, affiliateId);
+  const workerAffiliateId = await getAffiliateId(settings);
+  const affiliateId =
+    String(workerAffiliateId || "").trim() ||
+    String(campaignMeta.affiliateId || "").trim() ||
+    String(settings.affiliateId || "").trim();
+  const campaignSubId = String(campaignMeta.subId || "").trim();
+  const subId = campaignSubId || String(settings.subId || "YT3").trim() || "YT3";
+  const affiliateLink = buildAffiliateLink(cleanUrl, { ...settings, subId }, affiliateId);
 
   return {
     affiliateLink,
     landingUrl: landingUrl.toString(),
     cleanLandingUrl: cleanUrl,
+    campaignAffiliateId: String(campaignMeta.affiliateId || "").trim(),
+    campaignSubId: subId,
+    campaignSource: String(campaignMeta.source || ""),
+    campaignRawAffiliateLink: String(campaignMeta.affiliateLink || ""),
   };
 }
 
@@ -261,6 +457,15 @@ async function pollOnce({ forceHealth = false } = {}) {
 
   try {
     const settings = await getSettings();
+    let runtimeAffiliateId = String(settings.affiliateId || "").trim();
+    try {
+      const detected = await getAffiliateId(settings);
+      if (detected) {
+        runtimeAffiliateId = detected;
+      }
+    } catch {
+      // Keep configured affiliate id if detect failed.
+    }
 
     if (!settings.enabled) {
       runtimeState.lastJobStatus = "disabled";
@@ -288,7 +493,7 @@ async function pollOnce({ forceHealth = false } = {}) {
       {
         workerId: settings.workerId,
         workerName: settings.workerName,
-        affiliateId: settings.affiliateId,
+        affiliateId: runtimeAffiliateId,
         subId: settings.subId,
       },
       settings

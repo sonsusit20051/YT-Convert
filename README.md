@@ -89,7 +89,12 @@ Tóm tắt:
 - Backend auth worker bằng `WORKER_TOKEN`.
 - Job chỉ thành công khi worker trả `affiliateLink` hợp lệ.
 - Nếu worker không resolve ra landing URL có `gads_t_sig`, worker sẽ trả lỗi để tránh sai format.
-- Backend sẽ chuẩn hóa kết quả về dạng `/product/{shop_id}/{item_id}` và chỉ giữ `gads_t_sig` + `extraParams` trong `origin_link`.
+- Backend chuẩn hóa `origin_link` theo đúng công thức YT:
+  - path luôn là `/product/{shop_id}/{item_id}`
+  - query chỉ giữ `gads_t_sig`
+  - rồi mới encode vào `origin_link`
+- `affiliate_id` ưu tiên lấy từ worker extension đang online (account/tab affiliate trên trình duyệt). Nếu không lấy được mới fallback `DEFAULT_AFFILIATE_ID` (`17391540096`).
+- Chế độ YT-like: API có thể trả `affiliateLink` dạng `https://shp.today/...` (giống yt.shpee.cc). Link dài chuẩn vẫn có trong `longAffiliateLink`.
 
 ## API kiểu `yt.shpee.cc`
 

@@ -64,18 +64,6 @@ export function showStatus(type, message) {
   }
 }
 
-export function showResult(link) {
-  if (dom.resultText) {
-    dom.resultText.value = link || "";
-  }
-}
-
-export function hideResult() {
-  if (dom.resultText) {
-    dom.resultText.value = "";
-  }
-}
-
 export function setBuyEnabled(enabled) {
   if (dom.buyBtn) {
     dom.buyBtn.disabled = !enabled;
