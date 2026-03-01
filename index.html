@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
+    <title>Shopee Link Converter (YT)</title>
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='6' fill='%23f57c21'/%3E%3Cpath fill='white' d='M7 7h10l-1.1 8.2a2 2 0 0 1-2 1.8H10a2 2 0 0 1-2-1.8L7 7Zm2.2 2 .7 5h4.2l.7-5H9.2Z'/%3E%3C/svg%3E"
+    />
+    <link rel="stylesheet" href="./styles.css?v=20260301-7" />
+  </head>
+  <body>
+    <main class="page">
+      <section class="card">
+        <h1 class="title">Link sản phẩm Shopee</h1>
+
+        <div class="input-wrap">
+          <label class="sr-only" for="sourceLink">Link Shopee</label>
+          <input
+            id="sourceLink"
+            type="text"
+            inputmode="url"
+            autocomplete="off"
+            spellcheck="false"
+            placeholder="Dán link Shopee vào đây"
+          />
+          <button id="pasteBtn" class="icon-btn" type="button" aria-label="Dán từ clipboard">
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <path
+                d="M9 3.75A2.25 2.25 0 0 1 11.25 1.5h1.5A2.25 2.25 0 0 1 15 3.75h2.25a2.25 2.25 0 0 1 2.25 2.25v12a2.25 2.25 0 0 1-2.25 2.25h-10.5A2.25 2.25 0 0 1 4.5 18V6a2.25 2.25 0 0 1 2.25-2.25H9Zm2.25-.75a.75.75 0 0 0-.75.75v.75h3v-.75a.75.75 0 0 0-.75-.75h-1.5ZM6 7.5v10.5c0 .414.336.75.75.75h10.5a.75.75 0 0 0 .75-.75V7.5a.75.75 0 0 0-.75-.75H6.75A.75.75 0 0 0 6 7.5Z"
+              />
+            </svg>
+          </button>
+        </div>
+        <p id="inputError" class="input-error" role="alert"></p>
+
+        <button id="createBtn" type="button" class="btn btn-create">
+          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path
+              d="M15.59 3.41a2 2 0 0 1 2.82 0l2.18 2.18a2 2 0 0 1 0 2.82l-9.7 9.7a1 1 0 0 1-.46.26l-4 1a1 1 0 0 1-1.22-1.22l1-4a1 1 0 0 1 .26-.46l9.7-9.7Zm1.41 1.41-9.44 9.44-.56 2.24 2.24-.56 9.44-9.44L17 4.82Z"
+            />
+          </svg>
+          <span>Tạo Link Ngay</span>
+        </button>
+
+        <div id="statusBanner" class="banner hidden" role="status" aria-live="polite">
+          <span id="statusText"></span>
+          <button id="statusAction" type="button" class="status-action hidden"></button>
+        </div>
+
+        <div id="resultBox" class="result hidden">
+          <a id="resultLink" href="#" target="_blank" rel="noopener noreferrer"></a>
+          <button id="copyBtn" type="button" class="copy-btn">Copy</button>
+        </div>
+
+        <button id="buyBtn" type="button" class="btn btn-buy" disabled>
+          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path
+              d="M3 3a1 1 0 0 0 0 2h1.3l2.02 10.1A2 2 0 0 0 8.28 17h8.78a2 2 0 0 0 1.95-1.57l1.2-5.43A1.5 1.5 0 0 0 19.75 8H6.26L6 6.75A2 2 0 0 0 4.04 5H3Zm5.28 12L6.66 10h11.86l-1.03 4.65a.5.5 0 0 1-.49.35H8.28ZM9 20a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3Zm8 0a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3Z"
+            />
+          </svg>
+          <span>Mua Ngay</span>
+        </button>
+      </section>
+    </main>
+
+    <script type="module" src="./app/main.js?v=20260301-8"></script>
+  </body>
+</html>
