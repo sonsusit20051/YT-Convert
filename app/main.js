@@ -18,6 +18,19 @@ const state = {
   currentAffiliateLink: "",
 };
 
+function renderFatalMessage(message) {
+  const safeText = String(message || "Lỗi không xác định.");
+  document.body.innerHTML = `
+    <main style="min-height:100vh;display:grid;place-items:center;padding:24px;background:#f7f8fb;font-family:Segoe UI,Tahoma,Geneva,Verdana,sans-serif;color:#172332;">
+      <section style="max-width:560px;width:100%;background:#fff;border:1px solid #e6ecf5;border-radius:16px;padding:18px;">
+        <h1 style="margin:0 0 10px;font-size:20px;">UI không khởi tạo được</h1>
+        <p style="margin:0;color:#b23a2c;white-space:pre-wrap;">${safeText}</p>
+        <p style="margin:12px 0 0;color:#667085;">Hãy hard reload (Ctrl/Cmd+Shift+R). Nếu vẫn lỗi, mở <code>debug.html</code> để kiểm tra backend.</p>
+      </section>
+    </main>
+  `;
+}
+
 function ensureDomReady() {
   const requiredKeys = [
     "sourceInput",
@@ -35,8 +48,31 @@ function ensureDomReady() {
 
   const missing = requiredKeys.filter((key) => !dom[key]);
   if (missing.length > 0) {
-    throw new Error(`Thiếu DOM nodes: ${missing.join(", ")}.`);
+    const message = `Thiếu DOM nodes: ${missing.join(", ")}.`;
+    renderFatalMessage(message);
+    throw new Error(message);
   }
+}
+
+function installGlobalErrorGuards() {
+  window.addEventListener("error", (event) => {
+    const msg = event?.error?.message || event?.message || "Runtime error";
+    if (dom?.statusBanner && dom?.statusText) {
+      showStatus("error", `Lỗi runtime: ${msg}`);
+      return;
+    }
+    renderFatalMessage(`Lỗi runtime: ${msg}`);
+  });
+
+  window.addEventListener("unhandledrejection", (event) => {
+    const reason = event?.reason;
+    const msg = reason?.message || String(reason || "Unhandled promise rejection");
+    if (dom?.statusBanner && dom?.statusText) {
+      showStatus("error", `Lỗi promise: ${msg}`);
+      return;
+    }
+    renderFatalMessage(`Lỗi promise: ${msg}`);
+  });
 }
 
 function resetOutput() {
@@ -177,16 +213,12 @@ function bindEvents() {
 }
 
 function init() {
-  try {
-    ensureDomReady();
-    setBusy(false);
-    hideStatus();
-    resetOutput();
-    bindEvents();
-  } catch (error) {
-    // Keep page visible and report error without replacing the whole UI.
-    console.error(error);
-  }
+  ensureDomReady();
+  installGlobalErrorGuards();
+  setBusy(false);
+  hideStatus();
+  resetOutput();
+  bindEvents();
 }
 
 init();

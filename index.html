@@ -68,6 +68,19 @@
       </section>
     </main>
 
-    <script type="module" src="./app/main.js?v=20260301-8"></script>
+    <script type="module">
+      import("./app/main.js?v=20260301-7").catch((error) => {
+        const message = error?.message || String(error || "Unknown module error");
+        document.body.innerHTML = `
+          <main style="min-height:100vh;display:grid;place-items:center;padding:24px;background:#f7f8fb;font-family:Segoe UI,Tahoma,Geneva,Verdana,sans-serif;color:#172332;">
+            <section style="max-width:680px;width:100%;background:#fff;border:1px solid #e6ecf5;border-radius:16px;padding:18px;">
+              <h1 style="margin:0 0 10px;font-size:20px;">Lỗi tải JavaScript module</h1>
+              <p style="margin:0;color:#b23a2c;white-space:pre-wrap;">${message}</p>
+              <p style="margin:12px 0 0;color:#667085;">Hãy chạy trang qua HTTP (không dùng file://), sau đó hard reload Ctrl/Cmd+Shift+R.</p>
+            </section>
+          </main>
+        `;
+      });
+    </script>
   </body>
 </html>

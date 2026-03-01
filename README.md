@@ -34,7 +34,6 @@ Lưu ý ES Modules:
 - Không mở web bằng `file://.../index.html` vì module import có thể bị chặn và gây trắng trang.
 - Luôn chạy qua HTTP local (Live Server hoặc `python3 -m http.server`).
 - Nếu vừa sửa code mà vẫn trắng trang, hard reload: `Ctrl/Cmd + Shift + R`.
-- Khuyến nghị dùng `python3 -m http.server` để tránh xung đột auto-inject của một số extension/live-reload tool.
 
 ### 1) Chạy queue backend
 
