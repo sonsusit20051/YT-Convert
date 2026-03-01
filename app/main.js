@@ -102,7 +102,8 @@ async function handleCreateClick(event) {
     showStatus("success", "Tạo link thành công");
   } catch (error) {
     console.error(error);
-    showStatus("error", "Tạo link thất bại");
+    const msg = String(error?.message || "").trim();
+    showStatus("error", msg ? `Tạo link thất bại: ${msg}` : "Tạo link thất bại");
   } finally {
     setProcessing(false);
   }
