@@ -30,14 +30,13 @@ export function hideStatus() {
     statusTimer = 0;
   }
 
-  if (!dom.popupOverlay || !dom.popupBox || !dom.popupText) {
+  if (!dom.statusToast) {
     return;
   }
 
-  dom.popupOverlay.classList.add("hidden");
-  dom.popupOverlay.style.display = "";
-  dom.popupBox.classList.remove("error", "success");
-  dom.popupText.textContent = "";
+  dom.statusToast.classList.add("hidden");
+  dom.statusToast.classList.remove("error", "success");
+  dom.statusToast.textContent = "";
 }
 
 export function showStatus(type, message) {
@@ -46,21 +45,19 @@ export function showStatus(type, message) {
     statusTimer = 0;
   }
 
-  if (!dom.popupOverlay || !dom.popupBox || !dom.popupText) {
+  if (!dom.statusToast) {
     return;
   }
 
-  dom.popupOverlay.classList.remove("hidden");
-  dom.popupOverlay.style.display = "flex";
-  dom.popupBox.classList.remove("error", "success");
+  dom.statusToast.classList.remove("hidden", "error", "success");
   if (type === "error") {
-    dom.popupBox.classList.add("error");
+    dom.statusToast.classList.add("error");
   } else if (type === "success") {
-    dom.popupBox.classList.add("success");
+    dom.statusToast.classList.add("success");
   }
-  dom.popupText.textContent = message || "";
+  dom.statusToast.textContent = message || "";
 
-  if (type === "success") {
+  if (type === "success" || type === "error") {
     statusTimer = window.setTimeout(() => {
       hideStatus();
     }, 2200);

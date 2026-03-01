@@ -26,10 +26,7 @@ function requiredDomReady() {
       dom.buyBtn &&
       dom.inputError &&
       dom.resultText &&
-      dom.popupOverlay &&
-      dom.popupBox &&
-      dom.popupText &&
-      dom.popupCloseBtn
+      dom.statusToast
   );
 }
 
@@ -102,9 +99,10 @@ async function handleCreateClick(event) {
     state.currentAffiliateLink = link;
     showResult(link);
     setBuyEnabled(true);
-    showStatus("success", "Tạo link thành công.");
+    showStatus("success", "Tạo link thành công");
   } catch (error) {
-    showStatus("error", error?.message || "Tạo link thất bại.");
+    console.error(error);
+    showStatus("error", "Tạo link thất bại");
   } finally {
     setProcessing(false);
   }
@@ -126,12 +124,6 @@ function bindEvents() {
   dom.pasteBtn.addEventListener("click", handlePasteClick);
   dom.createBtn.addEventListener("click", handleCreateClick);
   dom.buyBtn.addEventListener("click", handleOpenClick);
-  dom.popupCloseBtn.addEventListener("click", hideStatus);
-  dom.popupOverlay.addEventListener("click", (event) => {
-    if (event.target === dom.popupOverlay) {
-      hideStatus();
-    }
-  });
   dom.sourceInput.addEventListener("keydown", (event) => {
     if (event.key === "Enter") {
       handleCreateClick(event);

@@ -76,10 +76,15 @@ Tóm tắt:
 - Frontend có thể deploy GitHub Pages.
 - Backend queue phải deploy ở server riêng (VPS/Render/Fly.io/Cloud Run...).
 - Worker phải luôn online để xử lý job.
+- Khi chạy từ GitHub Pages (`https://...`), backend bắt buộc dùng `https://` (không dùng `http://localhost`/`127.0.0.1`).
 
 ## Cấu hình quan trọng
 
 - Frontend gọi backend qua `BACKEND_BASE_URL` trong `app/config.js`.
+- Frontend hỗ trợ override backend động:
+  - mở web với query `?api=https://your-backend-domain`
+  - ví dụ: `https://sonsusit20051.github.io/YT-Convert/?api=https://api.yourdomain.com`
+  - giá trị này sẽ được lưu vào `localStorage` để dùng cho các lần sau.
 - Frontend hiện ưu tiên gọi API sync `GET /?url=...&yt=1` để nhận kết quả ngay.
 - Backend auth worker bằng `WORKER_TOKEN`.
 - Job chỉ thành công khi worker trả `affiliateLink` hợp lệ.

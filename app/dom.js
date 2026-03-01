@@ -5,8 +5,5 @@ export const dom = {
   buyBtn: document.getElementById("buyBtn"),
   inputError: document.getElementById("inputError"),
   resultText: document.getElementById("resultText"),
-  popupOverlay: document.getElementById("popupOverlay"),
-  popupBox: document.getElementById("popupBox"),
-  popupText: document.getElementById("popupText"),
-  popupCloseBtn: document.getElementById("popupCloseBtn"),
+  statusToast: document.getElementById("statusToast"),
 };
