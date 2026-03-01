@@ -7,6 +7,7 @@ import string
 import threading
 import time
 import uuid
+from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
@@ -36,11 +37,16 @@ JOBS = {}
 PENDING_QUEUE = []
 WORKERS = {}
 SHORT_LINKS = {}
+REQUEST_STATS = {}
 STORE_LOCK = threading.Lock()
 
 
 def now_ts() -> int:
     return int(time.time())
+
+
+def today_key_local() -> str:
+    return datetime.now().strftime("%Y-%m-%d")
 
 
 def trim_trailing_punctuation(text: str) -> str:
@@ -68,6 +74,41 @@ def is_allowed_host(hostname: str) -> bool:
     if re.match(r"^([a-z0-9-]+\.)*shopee\.[a-z.]{2,}$", host, re.IGNORECASE):
         return True
     return False
+
+
+def is_shortlink_host(hostname: str) -> bool:
+    host = (hostname or "").lower()
+    return host in ("shope.ee", "shp.ee") or host.endswith(".shp.ee") or host.startswith("s.shopee.")
+
+
+def is_shopee_landing_host(hostname: str) -> bool:
+    host = (hostname or "").lower()
+    return bool(re.match(r"^([a-z0-9-]+\.)*shopee\.[a-z.]{2,}$", host, re.IGNORECASE))
+
+
+def is_supported_shopee_path(parsed_url):
+    path = str(parsed_url.path or "/")
+    host = str(parsed_url.hostname or "").lower()
+
+    if is_shortlink_host(host):
+        return bool(path and path != "/" and len(path) > 1)
+
+    if not is_shopee_landing_host(host):
+        return False
+
+    patterns = [
+        r"^/product/\d+/\d+/?$",
+        r"^/.+-i\.\d+\.\d+/?$",
+        r"^/shop/\d+/?$",
+        r"^/[^/?#]+/?$",
+        r"^/.+-cat\.\d+/?$",
+        r"^/search/?$",
+        r"^/m/voucher(?:-shop)?(?:/[^/?#]+)?/?$",
+        r"^/m/[^/?#]+/?$",
+        r"^/flash_sale/?$",
+        r"^/cart/?$",
+    ]
+    return any(re.match(pattern, path, re.IGNORECASE) for pattern in patterns)
 
 
 def extract_product_ids(path: str):
@@ -275,6 +316,12 @@ def normalize_input(raw_input: str):
             "error": "Domain không được hỗ trợ. Chỉ chấp nhận *.shopee.*, s.shopee.*, shope.ee và *.shp.ee.",
         }
 
+    if not is_supported_shopee_path(parsed):
+        return {
+            "ok": False,
+            "error": "Định dạng link chưa hỗ trợ. Hãy dùng link sản phẩm, shop, category, search, voucher, flash sale, cart hoặc shortlink Shopee.",
+        }
+
     parsed = parsed._replace(fragment="")
     return {"ok": True, "url": parsed.geturl()}
 
@@ -309,6 +356,34 @@ def query_dict(query: str):
     for k, v in parse_qsl(query or "", keep_blank_values=True):
         data[k] = v
     return data
+
+
+def record_convert_request(kind: str):
+    day_key = today_key_local()
+    kind_key = "sync" if str(kind) == "sync" else "async"
+    with STORE_LOCK:
+        row = REQUEST_STATS.get(day_key) or {"total": 0, "sync": 0, "async": 0}
+        row["total"] = int(row.get("total", 0)) + 1
+        row[kind_key] = int(row.get(kind_key, 0)) + 1
+        REQUEST_STATS[day_key] = row
+
+
+def request_stats_today():
+    day_key = today_key_local()
+    with STORE_LOCK:
+        row = REQUEST_STATS.get(day_key) or {"total": 0, "sync": 0, "async": 0}
+        total_all = 0
+        for info in REQUEST_STATS.values():
+            total_all += int((info or {}).get("total", 0))
+    return {
+        "date": day_key,
+        "today": {
+            "total": int(row.get("total", 0)),
+            "sync": int(row.get("sync", 0)),
+            "async": int(row.get("async", 0)),
+        },
+        "totalSinceStart": total_all,
+    }
 
 
 def parse_affiliate_meta(affiliate_link: str):
@@ -572,12 +647,6 @@ def submit_job_result(body: dict):
             raw_landing_url = str(body.get("landingUrl") or "").strip()
             raw_clean_url = str(body.get("cleanLandingUrl") or "").strip()
             canonical_clean = canonicalize_landing_url(raw_clean_url or raw_landing_url)
-            if not canonical_clean:
-                return {
-                    "ok": False,
-                    "status": 422,
-                    "message": "Landing URL thiếu gads_t_sig hoặc không hợp lệ.",
-                }
 
             src_aff_id, src_sub_id, _ = extract_affiliate_parts(affiliate_link)
             if not src_aff_id and campaign_aff_id:
@@ -587,28 +656,41 @@ def submit_job_result(body: dict):
             worker_aff_id = str((WORKERS.get(worker_id) or {}).get("affiliateId") or "").strip()
             final_aff_id = choose_affiliate_id(worker_aff_id, campaign_aff_id, src_aff_id)
             final_sub_id = choose_yt_sub_id(src_sub_id)
-            final_affiliate_link = build_strict_affiliate_link(canonical_clean, final_aff_id, final_sub_id)
-            if not final_affiliate_link:
-                return {"ok": False, "status": 422, "message": "Không build được affiliate link chuẩn."}
+            final_affiliate_link = ""
+            if canonical_clean:
+                final_affiliate_link = build_strict_affiliate_link(canonical_clean, final_aff_id, final_sub_id)
+                if not final_affiliate_link:
+                    return {"ok": False, "status": 422, "message": "Không build được affiliate link chuẩn."}
 
             display_affiliate = ""
             if is_http_url(campaign_raw_link):
                 display_affiliate = campaign_raw_link
             elif is_http_url(affiliate_link):
                 display_affiliate = affiliate_link
-            else:
+            elif final_affiliate_link:
                 display_affiliate = final_affiliate_link
+
+            if not display_affiliate:
+                return {"ok": False, "status": 422, "message": "Không có affiliate link hợp lệ để trả kết quả."}
+
+            long_affiliate = ""
+            if final_affiliate_link:
+                long_affiliate = final_affiliate_link
+            else:
+                _, _, origin_from_aff = extract_affiliate_parts(affiliate_link)
+                if origin_from_aff and is_http_url(affiliate_link):
+                    long_affiliate = affiliate_link
 
             job["status"] = "success"
             job["message"] = "Tạo link thành công."
             job["affiliateLink"] = display_affiliate
-            job["longAffiliateLink"] = final_affiliate_link
+            job["longAffiliateLink"] = long_affiliate
             job["campaignRawAffiliateLink"] = campaign_raw_link
             job["campaignSource"] = campaign_source
             job["campaignAffiliateId"] = campaign_aff_id or src_aff_id or worker_aff_id
             job["campaignSubId"] = campaign_sub_id or src_sub_id
             job["landingUrl"] = raw_landing_url
-            job["cleanLandingUrl"] = canonical_clean or raw_clean_url
+            job["cleanLandingUrl"] = canonical_clean or raw_clean_url or raw_landing_url
             job["updatedAt"] = ts
         else:
             job["status"] = "error"
@@ -675,6 +757,7 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if path == "/" and query.get("url"):
+            record_convert_request("sync")
             if FORCE_YT_MODE:
                 mode = "yt"
             else:
@@ -744,6 +827,7 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == "/api/health":
             summary = workers_summary()
+            stats = request_stats_today()
             json_response(
                 self,
                 200,
@@ -751,6 +835,22 @@ class Handler(BaseHTTPRequestHandler):
                     "ok": True,
                     "workers": summary,
                     "queueSize": queue_size(),
+                    "requestsToday": stats["today"]["total"],
+                    "timestamp": now_ts(),
+                },
+            )
+            return
+
+        if path == "/api/stats":
+            stats = request_stats_today()
+            json_response(
+                self,
+                200,
+                {
+                    "ok": True,
+                    "date": stats["date"],
+                    "today": stats["today"],
+                    "totalSinceStart": stats["totalSinceStart"],
                     "timestamp": now_ts(),
                 },
             )
@@ -787,6 +887,7 @@ class Handler(BaseHTTPRequestHandler):
         path = urlparse(self.path).path
 
         if path == "/api/convert":
+            record_convert_request("async")
             try:
                 body = parse_json_body(self)
             except ValueError as e:

@@ -68,7 +68,7 @@ function toAbsoluteUrl(raw, base = "") {
 
 function isShortlinkHost(hostname) {
   const host = String(hostname || "").toLowerCase();
-  return host === "shope.ee" || host.endsWith(".shp.ee") || host.startsWith("s.shopee.");
+  return host === "shope.ee" || host === "shp.ee" || host.endsWith(".shp.ee") || host.startsWith("s.shopee.");
 }
 
 function isShopeeHost(hostname) {
@@ -355,11 +355,15 @@ async function convertJob(job, settings) {
     throw new Error("URL đích không thuộc domain Shopee.");
   }
 
-  if (!hasGadsSig(landingUrl)) {
-    throw new Error("Landing URL thiếu gads_t_sig.");
+  let cleanUrl = "";
+  if (hasGadsSig(landingUrl)) {
+    try {
+      cleanUrl = cleanLandingUrl(landingUrl);
+    } catch {
+      cleanUrl = "";
+    }
   }
 
-  const cleanUrl = cleanLandingUrl(landingUrl);
   const workerAffiliateId = await getAffiliateId(settings);
   const affiliateId =
     String(workerAffiliateId || "").trim() ||
@@ -367,7 +371,17 @@ async function convertJob(job, settings) {
     String(settings.affiliateId || "").trim();
   const campaignSubId = String(campaignMeta.subId || "").trim();
   const subId = campaignSubId || String(settings.subId || "YT3").trim() || "YT3";
-  const affiliateLink = buildAffiliateLink(cleanUrl, { ...settings, subId }, affiliateId);
+  let affiliateLink = "";
+  if (cleanUrl) {
+    affiliateLink = buildAffiliateLink(cleanUrl, { ...settings, subId }, affiliateId);
+  } else {
+    affiliateLink =
+      String(campaignMeta.expandedAffiliateLink || "").trim() ||
+      String(campaignMeta.affiliateLink || "").trim();
+  }
+  if (!affiliateLink) {
+    throw new Error("Không tạo được affiliate link từ campaign context.");
+  }
 
   return {
     affiliateLink,

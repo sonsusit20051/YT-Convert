@@ -24,7 +24,7 @@ ALLOW_INSECURE_TLS_RETRY = os.getenv("ALLOW_INSECURE_TLS_RETRY", "1") == "1"
 
 def is_shortlink_host(hostname: str) -> bool:
     host = (hostname or "").lower()
-    return host == "shope.ee" or host.endswith(".shp.ee") or host.startswith("s.shopee.")
+    return host in ("shope.ee", "shp.ee") or host.endswith(".shp.ee") or host.startswith("s.shopee.")
 
 
 def is_shopee_landing_host(hostname: str) -> bool:

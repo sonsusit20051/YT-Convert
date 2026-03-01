@@ -12,6 +12,36 @@ export function setBusy(isBusy) {
   }
 }
 
+export function renderCooldown(secondsLeft) {
+  const secs = Math.max(0, Number(secondsLeft) || 0);
+  if (dom.createBtn) {
+    if (secs > 0) {
+      dom.createBtn.disabled = true;
+      dom.createBtn.textContent = `Tạo lại (${secs}s)`;
+    } else {
+      dom.createBtn.disabled = false;
+      dom.createBtn.textContent = "Tạo link";
+    }
+  }
+
+  if (dom.cooldownHint) {
+    if (secs > 0) {
+      dom.cooldownHint.classList.remove("hidden");
+      dom.cooldownHint.textContent = `Vui lòng chờ ${secs}s để tạo link tiếp theo.`;
+    } else {
+      dom.cooldownHint.classList.add("hidden");
+      dom.cooldownHint.textContent = "";
+    }
+  }
+}
+
+export function setDailyRequestCount(value) {
+  if (!dom.dailyRequestCount) {
+    return;
+  }
+  dom.dailyRequestCount.textContent = String(value ?? "-");
+}
+
 export function clearInputError() {
   if (dom.inputError) {
     dom.inputError.textContent = "";

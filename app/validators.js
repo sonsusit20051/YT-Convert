@@ -56,11 +56,39 @@ export function isAllowedHost(hostname) {
 
 export function isShortLinkHost(hostname) {
   const host = hostname.toLowerCase();
-  return host === "shope.ee" || host.endsWith(".shp.ee") || host.startsWith("s.shopee.");
+  return host === "shope.ee" || host === "shp.ee" || host.endsWith(".shp.ee") || host.startsWith("s.shopee.");
 }
 
 export function isShopeeLandingHost(hostname) {
   return /^([a-z0-9-]+\.)*shopee\.[a-z.]{2,}$/i.test(hostname.toLowerCase());
+}
+
+export function isSupportedShopeePath(urlObj) {
+  const host = String(urlObj?.hostname || "").toLowerCase();
+  const path = String(urlObj?.pathname || "/");
+
+  if (isShortLinkHost(host)) {
+    return path && path !== "/" && path.length > 1;
+  }
+
+  if (!isShopeeLandingHost(host)) {
+    return false;
+  }
+
+  const patterns = [
+    /^\/product\/\d+\/\d+\/?$/i,
+    /^\/.+-i\.\d+\.\d+\/?$/i,
+    /^\/shop\/\d+\/?$/i,
+    /^\/[^/?#]+\/?$/i,
+    /^\/.+-cat\.\d+\/?$/i,
+    /^\/search\/?$/i,
+    /^\/m\/voucher(?:-shop)?(?:\/[^/?#]+)?\/?$/i,
+    /^\/m\/[^/?#]+\/?$/i,
+    /^\/flash_sale\/?$/i,
+    /^\/cart\/?$/i,
+  ];
+
+  return patterns.some((pattern) => pattern.test(path));
 }
 
 export function parseAndValidateInput(rawText) {
@@ -103,6 +131,14 @@ export function parseAndValidateInput(rawText) {
       ok: false,
       error:
         "Domain không được hỗ trợ. Chỉ chấp nhận *.shopee.*, s.shopee.*, shope.ee và *.shp.ee.",
+    };
+  }
+
+  if (!isSupportedShopeePath(parsed)) {
+    return {
+      ok: false,
+      error:
+        "Định dạng link chưa hỗ trợ. Hãy dùng link sản phẩm, shop, category, search, voucher, flash sale, cart hoặc shortlink Shopee.",
     };
   }
 

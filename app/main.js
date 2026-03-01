@@ -1,9 +1,11 @@
-import { convertViaSyncApi, hasBackendEndpoint } from "./api.js";
+import { convertViaSyncApi, getDailyStats, hasBackendEndpoint } from "./api.js";
 import { readClipboardText } from "./clipboard.js";
 import { dom } from "./dom.js";
 import {
   clearInputError,
   hideStatus,
+  renderCooldown,
+  setDailyRequestCount,
   setBusy,
   setBuyEnabled,
   showInputError,
@@ -11,9 +13,13 @@ import {
 } from "./ui.js";
 import { parseAndValidateInput } from "./validators.js";
 
+const CREATE_COOLDOWN_SEC = 5;
+
 const state = {
   busy: false,
   currentAffiliateLink: "",
+  cooldownUntilMs: 0,
+  cooldownTimer: 0,
 };
 
 function requiredDomReady() {
@@ -32,9 +38,60 @@ function resetOutput() {
   setBuyEnabled(false);
 }
 
+function clearCooldownTimer() {
+  if (state.cooldownTimer) {
+    window.clearInterval(state.cooldownTimer);
+    state.cooldownTimer = 0;
+  }
+}
+
+function getCooldownRemainSec() {
+  const remainMs = Math.max(0, state.cooldownUntilMs - Date.now());
+  return Math.ceil(remainMs / 1000);
+}
+
+function syncCooldownUi() {
+  if (state.busy) {
+    return;
+  }
+  renderCooldown(getCooldownRemainSec());
+}
+
+function startCooldown(seconds = CREATE_COOLDOWN_SEC) {
+  clearCooldownTimer();
+  state.cooldownUntilMs = Date.now() + Math.max(0, Number(seconds) || 0) * 1000;
+  syncCooldownUi();
+  state.cooldownTimer = window.setInterval(() => {
+    const remain = getCooldownRemainSec();
+    if (remain <= 0) {
+      state.cooldownUntilMs = 0;
+      clearCooldownTimer();
+      syncCooldownUi();
+      return;
+    }
+    syncCooldownUi();
+  }, 200);
+}
+
+async function refreshDailyStats() {
+  if (!hasBackendEndpoint()) {
+    setDailyRequestCount("-");
+    return;
+  }
+  try {
+    const payload = await getDailyStats();
+    setDailyRequestCount(payload?.today?.total ?? 0);
+  } catch {
+    setDailyRequestCount("-");
+  }
+}
+
 function setProcessing(nextBusy) {
   state.busy = nextBusy;
   setBusy(nextBusy);
+  if (!nextBusy) {
+    syncCooldownUi();
+  }
 }
 
 async function handlePasteClick(event) {
@@ -65,6 +122,11 @@ async function handleCreateClick(event) {
   if (state.busy) {
     return;
   }
+  if (getCooldownRemainSec() > 0) {
+    showStatus("error", `Vui lòng chờ ${getCooldownRemainSec()}s rồi tạo lại.`);
+    syncCooldownUi();
+    return;
+  }
 
   clearInputError();
   hideStatus();
@@ -85,7 +147,9 @@ async function handleCreateClick(event) {
   }
 
   setProcessing(true);
+  let requestSent = false;
   try {
+    requestSent = true;
     const payload = await convertViaSyncApi(validation.url.toString(), "yt");
     const link = String(payload?.affiliateLink || payload?.longAffiliateLink || "").trim();
     if (!link) {
@@ -101,6 +165,10 @@ async function handleCreateClick(event) {
     showStatus("error", msg ? `Tạo link thất bại: ${msg}` : "Tạo link thất bại");
   } finally {
     setProcessing(false);
+    if (requestSent) {
+      startCooldown(CREATE_COOLDOWN_SEC);
+      refreshDailyStats();
+    }
   }
 }
 
@@ -140,7 +208,9 @@ function init() {
   clearInputError();
   setBusy(false);
   resetOutput();
+  renderCooldown(0);
   bindEvents();
+  refreshDailyStats();
 }
 
 init();

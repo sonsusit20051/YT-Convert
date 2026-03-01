@@ -86,6 +86,7 @@ Tóm tắt:
   - ví dụ: `https://sonsusit20051.github.io/YT-Convert/?api=https://api.yourdomain.com`
   - giá trị này sẽ được lưu vào `localStorage` để dùng cho các lần sau.
 - Frontend hiện ưu tiên gọi API sync `GET /?url=...&yt=1` để nhận kết quả ngay.
+- Frontend có cooldown 5 giây sau mỗi lần tạo link (theo session trình duyệt) và hiển thị đếm ngược realtime.
 - Backend auth worker bằng `WORKER_TOKEN`.
 - Job chỉ thành công khi worker trả `affiliateLink` hợp lệ.
 - Nếu worker không resolve ra landing URL có `gads_t_sig`, worker sẽ trả lỗi để tránh sai format.
@@ -95,6 +96,7 @@ Tóm tắt:
   - rồi mới encode vào `origin_link`
 - `affiliate_id` ưu tiên lấy từ worker extension đang online (account/tab affiliate trên trình duyệt). Nếu không lấy được mới fallback `DEFAULT_AFFILIATE_ID` (`17391540096`).
 - Chế độ YT-like: API có thể trả `affiliateLink` dạng `https://shp.today/...` (giống yt.shpee.cc). Link dài chuẩn vẫn có trong `longAffiliateLink`.
+- Thống kê request/ngày: `GET /api/stats` trả tổng request convert trong ngày (`today.total`).
 
 ## API kiểu `yt.shpee.cc`
 
