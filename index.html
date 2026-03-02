@@ -30,6 +30,22 @@
           <p id="inputError" class="input-error"></p>
         </div>
 
+        <div class="field">
+          <label for="outputLink">Link đầu ra</label>
+          <div class="output-row">
+            <input
+              id="outputLink"
+              type="text"
+              inputmode="url"
+              autocomplete="off"
+              spellcheck="false"
+              placeholder="Link affiliate sẽ hiện ở đây"
+              readonly
+            />
+            <button id="copyOutputBtn" type="button" class="btn btn-light" disabled>Sao chép</button>
+          </div>
+        </div>
+
         <div class="actions">
           <button id="pasteBtn" type="button" class="btn btn-light">Dán link</button>
           <button id="createBtn" type="button" class="btn btn-primary">Tạo link</button>

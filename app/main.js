@@ -1,5 +1,5 @@
 import { convertViaSyncApi, hasBackendEndpoint } from "./api.js";
-import { readClipboardText } from "./clipboard.js";
+import { copyText, readClipboardText } from "./clipboard.js";
 import { dom } from "./dom.js";
 import {
   clearInputError,
@@ -24,6 +24,8 @@ const state = {
 function requiredDomReady() {
   return Boolean(
     dom.sourceInput &&
+      dom.outputInput &&
+      dom.copyOutputBtn &&
       dom.pasteBtn &&
       dom.createBtn &&
       dom.buyBtn &&
@@ -32,9 +34,19 @@ function requiredDomReady() {
   );
 }
 
+function syncOutputUi() {
+  if (dom.outputInput) {
+    dom.outputInput.value = state.currentAffiliateLink || "";
+  }
+  if (dom.copyOutputBtn) {
+    dom.copyOutputBtn.disabled = state.busy || !state.currentAffiliateLink;
+  }
+}
+
 function resetOutput() {
   state.currentAffiliateLink = "";
   setBuyEnabled(false);
+  syncOutputUi();
 }
 
 function clearCooldownTimer() {
@@ -75,6 +87,7 @@ function startCooldown(seconds = CREATE_COOLDOWN_SEC) {
 function setProcessing(nextBusy) {
   state.busy = nextBusy;
   setBusy(nextBusy);
+  syncOutputUi();
   if (!nextBusy) {
     syncCooldownUi();
   }
@@ -143,6 +156,7 @@ async function handleCreateClick(event) {
     }
 
     state.currentAffiliateLink = link;
+    syncOutputUi();
     setBuyEnabled(true);
     showStatus("success", "Link đã chuyển đổi xong.");
   } catch (error) {
@@ -154,6 +168,21 @@ async function handleCreateClick(event) {
     if (requestSent) {
       startCooldown(CREATE_COOLDOWN_SEC);
     }
+  }
+}
+
+async function handleCopyOutputClick(event) {
+  event?.preventDefault?.();
+  if (state.busy || !state.currentAffiliateLink) {
+    return;
+  }
+
+  try {
+    await copyText(state.currentAffiliateLink);
+    showStatus("success", "Đã sao chép link đầu ra.");
+  } catch (error) {
+    const msg = String(error?.message || "").trim();
+    showStatus("error", msg || "Không sao chép được link.");
   }
 }
 
@@ -172,6 +201,7 @@ function handleOpenClick(event) {
 function bindEvents() {
   dom.pasteBtn.addEventListener("click", handlePasteClick);
   dom.createBtn.addEventListener("click", handleCreateClick);
+  dom.copyOutputBtn.addEventListener("click", handleCopyOutputClick);
   dom.buyBtn.addEventListener("click", handleOpenClick);
   dom.sourceInput.addEventListener("keydown", (event) => {
     if (event.key === "Enter") {
@@ -180,6 +210,9 @@ function bindEvents() {
   });
   dom.sourceInput.addEventListener("input", () => {
     clearInputError();
+    if (state.currentAffiliateLink) {
+      resetOutput();
+    }
   });
 }
 
@@ -193,6 +226,7 @@ function init() {
   clearInputError();
   setBusy(false);
   resetOutput();
+  syncOutputUi();
   renderCooldown(0);
   bindEvents();
 }
